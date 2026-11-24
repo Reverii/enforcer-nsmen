@@ -27,6 +27,8 @@
   --radius-control: 6px;
   --gap: 12px;
   --font: "Geist", Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%230a0a0a' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -55,6 +57,7 @@
     --warn-line: #5a4512;
     --hatch: #4a4a4a;
     --scrim: rgba(0, 0, 0, 0.6);
+    --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%23ffffff' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
     color-scheme: dark;
   }
 }
@@ -84,13 +87,16 @@
   --warn-line: #5a4512;
   --hatch: #4a4a4a;
   --scrim: rgba(0, 0, 0, 0.6);
+  --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%23ffffff' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
   color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 html, body { height: 100%; margin: 0; background: var(--surface); color: var(--text); }
 body { font: 14px/20px var(--font); -webkit-tap-highlight-color: transparent; }
-button, input, textarea, select { font: inherit; color: inherit; }
+button, input, textarea, select { font: inherit; color: inherit; margin: 0; }
+button { -webkit-appearance: none; appearance: none; }
 .num { font-variant-numeric: tabular-nums; }
 :focus-visible { outline: 2px solid var(--hue); outline-offset: 2px; }
 
@@ -109,7 +115,6 @@ button, input, textarea, select { font: inherit; color: inherit; }
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-bottom: 12px;
 }
 
 .tabs {
@@ -131,7 +136,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
   cursor: pointer;
   color: var(--muted);
   font-size: 13px;
-  height: 56px;
+  height: 55px;
+  padding: 0;
 }
 .tabs button[aria-current="page"] { color: var(--text); font-weight: 500; }
 .tabs.one { grid-template-columns: 1fr; }
@@ -236,6 +242,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .icon {
   width: 36px;
   height: 36px;
+  padding: 0;
+  flex: none;
   border-radius: var(--radius-control);
   border: 1px solid var(--control);
   background: var(--surface);
@@ -340,28 +348,30 @@ button, input, textarea, select { font: inherit; color: inherit; }
   height: 36px;
   border: 1px solid var(--control);
   border-radius: var(--radius-control);
-  background: var(--surface);
-  padding: 0 8px;
+  background: var(--surface) var(--chev) no-repeat right 10px center / 12px 12px;
+  padding: 0 28px 0 10px;
   flex: 1;
   min-width: 0;
+  -webkit-appearance: none;
+  appearance: none;
 }
 .pltop .deptlabel { flex: 1; font-weight: 500; }
 .segrow { display: flex; margin: 0 0 12px; }
 .segrow .seg { width: 100%; }
 .segrow .seg button { flex: 1; }
 
-.gridwrap { overflow-x: auto; margin: 0 -16px; padding: 0 16px; }
-table.plan { border-collapse: separate; border-spacing: 0; }
+.gridwrap { overflow-x: auto; margin: 0 -16px; padding: 0 16px 0 0; -webkit-overflow-scrolling: touch; }
+table.plan { border-collapse: separate; border-spacing: 0; line-height: normal; }
 table.plan th, table.plan td { padding: 0; }
 table.plan .nm {
   position: sticky;
-  left: -16px;
+  left: 0;
   background: var(--surface);
   z-index: 2;
-  min-width: 128px;
-  max-width: 128px;
+  min-width: 144px;
+  max-width: 144px;
   text-align: left;
-  padding: 0 8px 0 0;
+  padding: 0 8px 0 16px;
   height: 44px;
   border-bottom: 1px solid var(--rule);
 }
@@ -412,12 +422,13 @@ th.dh button {
   gap: 1px;
   color: inherit;
   font-size: 12px;
+  line-height: normal;
   padding: 0 0 4px;
   border-radius: 6px 6px 0 0;
 }
 th.dh button b { color: var(--text); font-weight: 500; font-size: 13px; }
 th.dh.fl button { background: var(--raised); color: var(--text); }
-th.dh.fl button::after { content: ""; width: 14px; height: 3px; border-radius: 2px; background: var(--text); margin-top: 2px; }
+th.dh.fl button::after { content: ""; width: 14px; height: 3px; border-radius: 2px; background: var(--text); margin-top: 2px; flex: none; }
 th.dh.we button { color: var(--faint); }
 th.dh.today button b { text-decoration: underline; text-underline-offset: 3px; }
 
@@ -467,11 +478,9 @@ td.c button.s-none::before { content: ""; width: 4px; height: 4px; border-radius
 .mini.full i { background: var(--negative); }
 
 .secblock {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
+  margin-top: 22px;
 }
-.secblock h4 { font-size: 14px; font-weight: 500; margin: 0 0 8px; display: flex; justify-content: space-between; }
+.secblock h4 { font-size: 14px; font-weight: 500; margin: 0 0 6px; display: flex; justify-content: space-between; }
 .secblock h4 span { color: var(--muted); font-weight: 400; }
 .prow {
   display: flex;
@@ -489,9 +498,21 @@ td.c button.s-none::before { content: ""; width: 4px; height: 4px; border-radius
   height: 36px;
   border: 1px solid var(--control);
   border-radius: var(--radius-control);
-  background: var(--surface);
-  padding: 0 8px;
+  background: var(--surface) var(--chev) no-repeat right 10px center / 12px 12px;
+  padding: 0 28px 0 10px;
+  -webkit-appearance: none;
+  appearance: none;
 }
+.addrow .field {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  border-radius: var(--radius-control);
+  margin-bottom: 0;
+}
+.adname { margin-bottom: 16px; }
+.adname .addrow { margin-top: 0; }
+.adname #adNameMsg:not(:empty) { margin-top: 8px; }
 
 /* Sheet */
 .scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 20; }
@@ -549,7 +570,13 @@ label.f { display: block; font-weight: 500; margin: 0 0 6px; }
   border-radius: 8px;
   background: var(--surface);
   padding: 0 12px;
-  margin-bottom: 14px;
+  margin: 0 0 14px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+select.field {
+  background: var(--surface) var(--chev) no-repeat right 12px center / 12px 12px;
+  padding: 0 32px 0 12px;
 }
 textarea.field { height: 72px; padding: 10px 12px; resize: none; }
 .help { color: var(--muted); font-size: 12px; margin: -10px 0 14px; }

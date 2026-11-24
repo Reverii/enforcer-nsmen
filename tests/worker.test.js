@@ -481,3 +481,68 @@ test('signed export-link token works without initData, rejects expired/tampered 
   assert.equal(expRes.status, 401);
   assert.equal((await expRes.json()).code, 'EXPIRED_TOKEN');
 });
+
+test('Highest Admin can rename self via PATCH /api/admin/me; planner and others get 403; bad name gets 400', async () => {
+  await resetDb();
+
+  // Seed admin from Telegram first_name ("LTC TAY")
+  const init1 = await (await apiReq(ADMIN_SEED, 'GET', '/api/init')).json();
+  assert.equal(init1.isAdmin, true);
+  assert.equal(init1.admin.name, 'LTC TAY');
+  assert.equal(init1.plannerName, 'LTC TAY');
+
+  // Add a department planner and join a regular NSman
+  await apiReq(ADMIN_SEED, 'POST', '/api/planners', {
+    tgId: String(PLANNER_NON_NSMAN.id),
+    name: 'ME4 ONG S.H.',
+    dept: 'Loadmaster',
+  });
+  await apiReq(NSMAN_LM, 'POST', '/api/join', { name: 'ME2 ALPHA', dept: 'Loadmaster' });
+
+  // Department planner cannot rename Highest Admin (403)
+  const plannerRes = await apiReq(PLANNER_NON_NSMAN, 'PATCH', '/api/admin/me', { name: 'ME4 HACK' });
+  assert.equal(plannerRes.status, 403);
+  assert.equal((await plannerRes.json()).code, 'FORBIDDEN');
+
+  // Regular NSman cannot rename Highest Admin (403)
+  const nsmanRes = await apiReq(NSMAN_LM, 'PATCH', '/api/admin/me', { name: 'ME2 HACK' });
+  assert.equal(nsmanRes.status, 403);
+  assert.equal((await nsmanRes.json()).code, 'FORBIDDEN');
+
+  // Unjoined outsider cannot rename Highest Admin (403)
+  const outsiderRes = await apiReq(ADMIN_NEW, 'PATCH', '/api/admin/me', { name: 'OUTSIDER' });
+  assert.equal(outsiderRes.status, 403);
+
+  // Bad names rejected with 400
+  const emptyRes = await apiReq(ADMIN_SEED, 'PATCH', '/api/admin/me', { name: '   ' });
+  assert.equal(emptyRes.status, 400);
+  assert.equal((await emptyRes.json()).code, 'BAD_NAME');
+
+  const longRes = await apiReq(ADMIN_SEED, 'PATCH', '/api/admin/me', { name: 'A'.repeat(61) });
+  assert.equal(longRes.status, 400);
+  assert.equal((await longRes.json()).code, 'BAD_NAME');
+
+  // Highest Admin renames self -> trimmed & uppercased, returned in payload & persisted
+  const okRes = await apiReq(ADMIN_SEED, 'PATCH', '/api/admin/me', { name: '  maj   brandon tan  ' });
+  assert.equal(okRes.status, 200);
+  const okData = await okRes.json();
+  assert.equal(okData.admin.name, 'MAJ BRANDON TAN');
+  assert.equal(okData.plannerName, 'MAJ BRANDON TAN');
+
+  // Subsequent /api/init reflects new name
+  const init2 = await (await apiReq(ADMIN_SEED, 'GET', '/api/init')).json();
+  assert.equal(init2.admin.name, 'MAJ BRANDON TAN');
+  assert.equal(init2.plannerName, 'MAJ BRANDON TAN');
+
+  // Rename log row written, and subsequent actions log the new name as actor
+  await apiReq(ADMIN_SEED, 'POST', '/api/flights', { dept: 'Loadmaster', date: TOMORROW, type: 'C-130', time: '0800-1500' });
+  const logs = await db
+    .prepare("SELECT actor, action, detail FROM log WHERE action IN ('rename_highest_admin', 'set_flight_day') ORDER BY id")
+    .all();
+  assert.equal(logs.results.length, 2);
+  assert.equal(logs.results[0].action, 'rename_highest_admin');
+  assert.equal(logs.results[0].actor, 'MAJ BRANDON TAN');
+  assert.equal(logs.results[0].detail, 'LTC TAY -> MAJ BRANDON TAN');
+  assert.equal(logs.results[1].action, 'set_flight_day');
+  assert.equal(logs.results[1].actor, 'MAJ BRANDON TAN');
+});

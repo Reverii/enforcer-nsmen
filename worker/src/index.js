@@ -32,6 +32,7 @@ import {
   removeNsmanDb,
   removePlannerAdminDb,
   removeSelfPlannerAtomicDb,
+  renameAdminDb,
   sendSaf100AtomicDb,
   unmarkAvailableDb,
   unplanCellDb,
@@ -99,6 +100,7 @@ async function readJson(request) {
 }
 
 function resolveActorName({ plannerRows, dept, adminRow, isAdmin, me, tgUser }) {
+  if (isAdmin && adminRow && adminRow.name) return adminRow.name;
   if (dept && plannerRows) {
     const inDept = plannerRows.find((r) => r.dept === dept && r.name);
     if (inDept) return inDept.name;
@@ -107,7 +109,6 @@ function resolveActorName({ plannerRows, dept, adminRow, isAdmin, me, tgUser }) 
     const any = plannerRows.find((r) => r.name);
     if (any) return any.name;
   }
-  if (isAdmin && adminRow && adminRow.name) return adminRow.name;
   if (me && me.name) return me.name;
   if (tgUser && tgUser.username) return '@' + tgUser.username;
   return tgUser ? String(tgUser.id) : 'unknown';
@@ -722,7 +723,38 @@ export async function handleRequest(request, env, ctx, opts = {}) {
       return jsonResponse(request, env, { ok: true, plannerDepts: nextEffectiveDepts, planners });
     }
 
-    // ---- Highest Admin handover ----
+    // ---- Highest Admin rename & handover ----
+
+    if (method === 'PATCH' && path === '/api/admin/me') {
+      if (!isAdmin) {
+        throw new RuleError('FORBIDDEN', 'Only the Highest Admin can update this name.', 403);
+      }
+      const body = await readJson(request);
+      const nextName = validateName(body.name);
+      const oldName = (adminRow && adminRow.name) || '';
+      const updatedAdmin = await renameAdminDb(env.DB, {
+        currentTgId: tgUser.id,
+        newName: nextName,
+        nowIso,
+      });
+      await writeLog(env.DB, {
+        at: nowIso,
+        actor: nextName,
+        action: 'rename_highest_admin',
+        detail: `${oldName} -> ${nextName}`,
+      });
+      const data = await loadInitData(env.DB, tgUser.id, updatedAdmin);
+      return jsonResponse(request, env, {
+        ok: true,
+        today,
+        workYear: workYearOf(today),
+        maxDate: maxMarkingDate(today),
+        cap: CAP,
+        departments: DEPARTMENTS,
+        tgUser: { id: tgUser.id, username: tgUser.username },
+        ...data,
+      });
+    }
 
     if (method === 'POST' && path === '/api/admin/pass') {
       const body = await readJson(request);

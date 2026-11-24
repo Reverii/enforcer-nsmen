@@ -180,13 +180,14 @@
     if (tg.colorScheme === 'dark' || tg.colorScheme === 'light') {
       root.setAttribute('data-theme', tg.colorScheme);
     }
-    const t = tg.themeParams || {};
-    if (t.bg_color) root.style.setProperty('--surface', t.bg_color);
-    if (t.secondary_bg_color) root.style.setProperty('--raised', t.secondary_bg_color);
-    if (t.text_color) root.style.setProperty('--text', t.text_color);
-    if (t.hint_color) root.style.setProperty('--muted', t.hint_color);
-    if (t.button_color) root.style.setProperty('--hue', t.button_color);
-    if (t.button_text_color) root.style.setProperty('--on-hue', t.button_text_color);
+    // Keep the app's own palette (the approved mock-up); only follow Telegram's light/dark choice,
+    // and paint Telegram's header and background in the app's surface colour so they match.
+    const surface = getComputedStyle(root).getPropertyValue('--surface').trim();
+    if (/^#[0-9a-f]{6}$/i.test(surface)) {
+      try { if (tg.setHeaderColor) tg.setHeaderColor(surface); } catch { /* older clients */ }
+      try { if (tg.setBackgroundColor) tg.setBackgroundColor(surface); } catch { /* older clients */ }
+      try { if (tg.setBottomBarColor) tg.setBottomBarColor(surface); } catch { /* older clients */ }
+    }
   }
 
   function askWriteAccess() {
@@ -793,9 +794,19 @@
 
   function renderAdmin() {
     const meId = myTgId();
+    const curAdminName = (S.admin && S.admin.name) || S.plannerName || '';
     $('screen').innerHTML = `<div class="pad">
       <div class="apptitle"><h3>Admin</h3><span class="chip">Highest Admin</span></div>
       <div class="finding"><p>You assign planners by Telegram ID. Each department's planners can also add planners for their own department.</p></div>
+      <form id="adNameForm" class="adname">
+        <label class="f" for="adName">Your rank and name</label>
+        <div class="addrow">
+          <input class="field" id="adName" autocomplete="off" autocapitalize="characters" maxlength="60" placeholder="Rank and initials" value="${esc(curAdminName)}" required>
+          <button class="btn" id="saveAdName" type="submit">Save</button>
+        </div>
+        <p class="note" style="margin:6px 0 0">Shown on the Planner tab and in audit logs.</p>
+        <div id="adNameMsg"></div>
+      </form>
       ${S.departments.map((d) => {
         const count = S.planners.filter((p) => p.dept === d).length;
         return `<div class="list" style="margin-top:14px">
@@ -820,6 +831,28 @@
         </form>
       </div>
     </div>`;
+
+    $('adNameForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const nameVal = $('adName').value.trim().toUpperCase().replace(/\s+/g, ' ');
+      if (!nameVal) {
+        $('adNameMsg').innerHTML = `<div class="why">Enter a rank and name.</div>`;
+        return;
+      }
+      $('adNameMsg').innerHTML = '';
+      const btn = $('saveAdName');
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      try {
+        const data = await api('PATCH', '/api/admin/me', { name: nameVal });
+        applyInit(data, true);
+        toast(`Saved as ${nameVal}`);
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = 'Save';
+        $('adNameMsg').innerHTML = `<div class="why">${esc(err.message || 'Could not save name.')}</div>`;
+      }
+    };
 
     wirePlannerForm();
     wireRemovePlanners();

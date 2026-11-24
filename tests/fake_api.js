@@ -18,7 +18,7 @@
     nextId: 10,
     isAdmin: isAdminInit,
     admin: isAdminInit ? { tg_id: ME_TG, name: o.adminName || 'LTC TAY W.K.' } : null,
-    plannerName: o.plannerName || (isAdminInit ? 'LTC TAY W.K.' : 'ME2 ALPHA'),
+    plannerName: o.plannerName || (isAdminInit ? (o.adminName || 'LTC TAY W.K.') : 'ME2 ALPHA'),
     nsmen: [
       ...(o.joined === false
         ? []
@@ -242,6 +242,14 @@
       }
       const eff = effectiveDepts();
       return { ok: true, plannerDepts: eff, planners: state.isAdmin ? state.planners.slice() : state.planners.filter((p) => eff.includes(p.dept)) };
+    }
+    if (method === 'PATCH' && path === '/api/admin/me') {
+      if (!state.isAdmin) return { ok: false, error: 'Only the Highest Admin can update this name.' };
+      const name = String(body.name || '').trim().toUpperCase().replace(/\s+/g, ' ');
+      if (!name || name.length > 60) return { ok: false, error: 'Enter a name (1 to 60 characters).' };
+      state.admin = Object.assign({}, state.admin || { tg_id: ME_TG }, { name });
+      state.plannerName = name;
+      return initPayload();
     }
     if (method === 'POST' && path === '/api/admin/pass') {
       if (!state.isAdmin) return { ok: false, error: 'Only the Highest Admin can pass on this role.' };

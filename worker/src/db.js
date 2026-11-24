@@ -61,6 +61,17 @@ export async function passAdminDb(db, { currentTgId, newTgId, newName, nowIso })
   return getAdmin(db);
 }
 
+export async function renameAdminDb(db, { currentTgId, newName, nowIso }) {
+  const res = await db
+    .prepare('UPDATE admin SET name = ?, updated_at = ? WHERE id = 1 AND tg_id = ?')
+    .bind(newName, nowIso, String(currentTgId))
+    .run();
+  if (!res.meta || res.meta.changes !== 1) {
+    throw new RuleError('FORBIDDEN', 'Only the Highest Admin can update this name.', 403);
+  }
+  return getAdmin(db);
+}
+
 export async function getNsmanByTgId(db, tgId, { includeInactive = false } = {}) {
   const sql = includeInactive
     ? 'SELECT id, name, dept, tg_id, tg_username, active, joined_at FROM nsmen WHERE tg_id = ?'
@@ -185,8 +196,8 @@ export async function loadInitData(db, tgId, adminRow = undefined) {
 
   const namedRow = myPlannerRows.find((r) => r.name);
   const plannerName =
-    (namedRow && namedRow.name) ||
     (isAdmin && resolvedAdmin && resolvedAdmin.name) ||
+    (namedRow && namedRow.name) ||
     (me && me.name) ||
     '';
 

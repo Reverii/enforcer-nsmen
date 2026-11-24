@@ -35,6 +35,7 @@ async function open({
   initData = 'test-init-data',
   joined = true,
   isAdmin = false,
+  adminName = '',
   plannerDepts = ['Loadmaster', 'Pilot'],
   plannerName = '',
   tgId = '6982215470',
@@ -49,9 +50,9 @@ async function open({
   page.on('pageerror', (e) => errors.push(e.message));
   await page.route('https://telegram.org/**', (r) => r.fulfill({ body: '', contentType: 'text/javascript' }));
   await page.addInitScript(
-    ({ initData, joined, isAdmin, plannerDepts, plannerName, tgId, delay, bravoAtCap, hasDownloadFile }) => {
+    ({ initData, joined, isAdmin, adminName, plannerDepts, plannerName, tgId, delay, bravoAtCap, hasDownloadFile }) => {
       window.APP_TODAY = '2026-11-24';
-      window.FAKE_OPTS = { joined, isAdmin, plannerDepts, plannerName, tgId, delay, bravoAtCap };
+      window.FAKE_OPTS = { joined, isAdmin, adminName, plannerDepts, plannerName, tgId, delay, bravoAtCap };
       window.DOWNLOAD_CALLS = [];
       const webApp = {
         initData,
@@ -66,7 +67,7 @@ async function open({
       }
       window.Telegram = { WebApp: webApp };
     },
-    { initData, joined, isAdmin, plannerDepts, plannerName, tgId, delay, bravoAtCap, hasDownloadFile },
+    { initData, joined, isAdmin, adminName, plannerDepts, plannerName, tgId, delay, bravoAtCap, hasDownloadFile },
   );
   await page.addInitScript({ content: fs.readFileSync(path.join(import.meta.dirname, 'fake_api.js'), 'utf8') });
   await page.goto(base);
@@ -253,5 +254,32 @@ test('fits at 360px phone viewport without page-level horizontal overflow (inclu
   await page.locator('#tabAdmin').click();
   await page.getByRole('heading', { name: 'Admin', exact: true }).waitFor();
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 360));
+  await page.close();
+});
+
+test('Highest Admin sees "Your rank and name" on Admin tab and saving updates the Planner chip', async () => {
+  const page = await open({
+    joined: false,
+    isAdmin: true,
+    adminName: 'BRANDON',
+    tgId: '5520881904',
+  });
+  await page.getByRole('heading', { name: 'Planner' }).waitFor();
+  assert.equal(await page.locator('.apptitle .chip').innerText(), 'BRANDON');
+
+  await page.locator('#tabAdmin').click();
+  await page.getByLabel('Your rank and name').waitFor();
+  assert.equal(await page.locator('#adName').inputValue(), 'BRANDON');
+
+  await page.locator('#adName').fill('maj brandon tan');
+  await page.locator('#saveAdName').click();
+  await page.getByText('Saved as MAJ BRANDON TAN').waitFor();
+  assert.equal(await page.locator('#adName').inputValue(), 'MAJ BRANDON TAN');
+
+  await page.locator('#tabPlanner').click();
+  await page.getByRole('heading', { name: 'Planner' }).waitFor();
+  assert.equal(await page.locator('.apptitle .chip').innerText(), 'MAJ BRANDON TAN');
+
+  assert.deepEqual(page.errors, []);
   await page.close();
 });
