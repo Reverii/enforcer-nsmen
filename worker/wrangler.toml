@@ -15,8 +15,9 @@ migrations_dir = "migrations"
 ALLOWED_ORIGIN = "https://reverii.github.io"
 # Full Mini App page URL for the "Open" button in SAF100 bot messages
 APP_URL = "https://reverii.github.io/enforcer-nsmen/"
-# Telegram user ID (digits) of the Highest Admin. Used only while no admin is stored in D1.
-HIGHEST_ADMIN_TG_ID = "REPLACE_WITH_HIGHEST_ADMIN_TELEGRAM_ID"
+# HIGHEST_ADMIN_TG_ID (the Highest Admin's Telegram user ID) is stored as a secret so it stays out of
+# this public repo. Set it with:  npx wrangler secret put HIGHEST_ADMIN_TG_ID --config worker/wrangler.toml
+# It is used only while no admin is stored in D1.
 
 # Secret (set via CLI, never put it in this file):
 #   npx wrangler secret put BOT_TOKEN --config worker/wrangler.toml

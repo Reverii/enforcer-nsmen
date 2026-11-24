@@ -103,14 +103,21 @@ commands once.
    npx wrangler secret put BOT_TOKEN --config worker/wrangler.toml
    ```
 
-2. Open [`worker/wrangler.toml`](worker/wrangler.toml) and fill in the three values under `[vars]`:
+2. Store the Highest Admin's Telegram user ID (from step 1.4) as a secret too, so it stays out of
+   this public repo:
+
+   ```bash
+   npx wrangler secret put HIGHEST_ADMIN_TG_ID --config worker/wrangler.toml
+   ```
+
+   The first time that Telegram ID opens the app (while no admin is stored in D1), it is saved in the
+   database as the Highest Admin. After that, the database is the source of truth: later handovers
+   happen inside the **Admin** tab.
+3. Open [`worker/wrangler.toml`](worker/wrangler.toml) and fill in the two values under `[vars]`:
    - `ALLOWED_ORIGIN`: your GitHub Pages origin **without a trailing slash**, e.g.
      `https://yourunit.github.io`
    - `APP_URL`: your full Mini App page URL, e.g.
      `https://yourunit.github.io/enforcer-nsmen/`
-   - `HIGHEST_ADMIN_TG_ID`: the numeric Telegram user ID from step 1.4. The first time that Telegram ID
-     opens the app (while no admin is stored in D1), it is saved in the database as the Highest Admin.
-     After that, the database is the source of truth — later handovers happen inside the **Admin** tab.
 
 ### 5. Deploy the Worker
 
