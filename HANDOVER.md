@@ -58,7 +58,7 @@ Choose whichever matches your setup:
 4. Have them accept the invite, log in to Cloudflare, and test running `npx wrangler login` and
    `npx wrangler d1 info enforcer-nsmen` from their machine.
 5. Note: `BOT_TOKEN` is stored as an encrypted Cloudflare secret and does not need to be re-entered
-   unless you rotate the bot token. the `HIGHEST_ADMIN_TG_ID` Cloudflare secret is only a first-run
+   unless you rotate the bot token. The `HIGHEST_ADMIN_TG_ID` Cloudflare secret is only a first-run
    seed and does not need to be changed after handover (though updating it to match the new admin is
    harmless).
 
