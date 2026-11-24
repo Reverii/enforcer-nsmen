@@ -1,0 +1,74 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  /* Three 640x360 BotFather banner options. Render one at a time with ?o=a|b|c */
+  :root { --ink:#0a0a0a; --paper:#ffffff; --muted:#a3a7ad; --hue:#5b93e6; --line:#26292d; }
+  * { box-sizing:border-box; margin:0; }
+  html, body { width:640px; height:360px; overflow:hidden; background:var(--ink); }
+  body { font-family:"Geist", Inter, "Segoe UI", sans-serif; color:var(--paper); }
+  .o { width:640px; height:360px; position:relative; display:none; }
+  .mark { width:48px; height:48px; border-radius:10px; background:var(--paper); color:var(--ink); display:grid; place-items:center; font-weight:700; font-size:19px; letter-spacing:-0.03em; }
+
+  /* A: type only, the name as the picture */
+  #a { padding:44px; display:flex; flex-direction:column; justify-content:space-between; }
+  #a h1 { font-size:96px; line-height:86px; font-weight:700; letter-spacing:-0.05em; }
+  #a h1 span { color:var(--hue); }
+  #a p { font-size:17px; color:var(--muted); }
+  #a .top { display:flex; justify-content:space-between; align-items:center; }
+
+  /* B: the aircraft */
+  #b { background:#0d1a2e; }
+  #b svg { position:absolute; right:-40px; top:28px; width:400px; height:304px; }
+  #b .txt { position:absolute; left:44px; top:44px; bottom:44px; width:300px; display:flex; flex-direction:column; justify-content:space-between; }
+  #b h1 { font-size:46px; line-height:46px; font-weight:700; letter-spacing:-0.03em; }
+  #b p { font-size:16px; line-height:22px; color:#aab8cc; margin-top:12px; }
+
+  /* C: the five departments */
+  #c { background:var(--paper); color:var(--ink); padding:44px; display:grid; grid-template-columns: 1fr 210px; gap:28px; }
+  #c .mark { background:var(--ink); color:var(--paper); }
+  #c h1 { font-size:50px; line-height:50px; font-weight:700; letter-spacing:-0.03em; margin-top:22px; }
+  #c p { font-size:16px; line-height:22px; color:#5f6368; margin-top:12px; }
+  #c ul { list-style:none; padding:0; align-self:center; display:grid; gap:6px; }
+  #c li { height:40px; display:flex; align-items:center; justify-content:space-between; padding:0 14px; border-radius:8px; background:#eef1f5; font-size:17px; font-weight:500; }
+  #c li i { width:10px; height:10px; border-radius:50%; background:var(--hue); }
+</style></head>
+<body>
+<div class="o" id="a">
+  <div class="top"><div class="mark">EN</div><p>For NSmen and their planners</p></div>
+  <h1>Enforcer<br><span>NSMEN</span></h1>
+</div>
+
+<div class="o" id="b">
+  <div class="txt">
+    <div class="mark">EN</div>
+    <div><h1>Enforcer NSMEN</h1><p>Flying duty planning for NSmen.</p></div>
+  </div>
+  <!-- A generic four-engine high-wing transport, top view, drawn flat -->
+  <svg viewBox="0 0 400 304" aria-hidden="true">
+    <g fill="#5b93e6">
+      <rect x="186" y="20" width="28" height="250" rx="14"/>
+      <path d="M200 20 C188 20 186 34 186 44 L214 44 C214 34 212 20 200 20 Z"/>
+      <path d="M20 112 L380 112 L380 128 L214 136 L186 136 L20 128 Z"/>
+      <rect x="66" y="98" width="14" height="40" rx="5"/>
+      <rect x="120" y="96" width="14" height="44" rx="5"/>
+      <rect x="266" y="96" width="14" height="44" rx="5"/>
+      <rect x="320" y="98" width="14" height="40" rx="5"/>
+      <path d="M120 250 L280 250 L280 262 L214 268 L186 268 L120 262 Z"/>
+    </g>
+  </svg>
+</div>
+
+<div class="o" id="c">
+  <div>
+    <div class="mark">EN</div>
+    <h1>Enforcer<br>NSMEN</h1>
+    <p>One place to plan flying duty for every department.</p>
+  </div>
+  <ul><li>Pilot<i></i></li><li>Loadmaster<i></i></li><li>Tacco<i></i></li><li>Sup1<i></i></li><li>Sup2<i></i></li></ul>
+</div>
+<script>
+  const o = (location.hash.slice(1) || "a");
+  document.getElementById(o).style.display = o === "a" || o === "c" ? (o === "c" ? "grid" : "flex") : "block";
+</script>
+</body></html>
