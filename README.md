@@ -15,6 +15,8 @@ they have used.
 - **Marking availability:** tap any date from today up to the end of the next work year. Your
   department's flight days have a bar under the date and are listed below the calendar with their
   flight type and time.
+- **Select days (multi-select):** tap **Select days** on **My days** to tick multiple dates across
+  months (or use **All `<Dept>` flight days this month**) and mark or remove them in one batch.
 - **Planning (planners and Highest Admin):** open the **Planner** tab. Tap any date header in the grid
   to see everyone who is free (sorted by fewest SAF100 days used first) and plan several people at once,
   or post/edit that day's flight details.

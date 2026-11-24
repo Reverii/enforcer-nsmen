@@ -164,6 +164,17 @@ export async function getCell(db, nsmanId, date) {
     .first();
 }
 
+export async function getCellsInRange(db, nsmanId, minDate, maxDate) {
+  const res = await db
+    .prepare(
+      `SELECT date, state FROM cells
+       WHERE nsman_id = ? AND date >= ? AND date <= ?`,
+    )
+    .bind(Number(nsmanId), minDate, maxDate)
+    .all();
+  return res.results || [];
+}
+
 export async function getFlightDay(db, dept, date) {
   return db
     .prepare('SELECT id, dept, date, type, time FROM flight_days WHERE dept = ? AND date = ?')
@@ -342,6 +353,67 @@ export async function unmarkAvailableDb(db, { nsmanId, date, expectedState }) {
   if (!res.meta || res.meta.changes !== 1) {
     throw new RuleError('CONFLICT', 'That day changed while you tapped. Refresh and try again.', 409);
   }
+}
+
+export async function markAvailableBatchDb(db, { nsmanId, dept, items }) {
+  if (!items || !items.length) return { done: [], conflicted: [] };
+  const id = Number(nsmanId);
+  const stmts = items.map((item) => {
+    if (item.currentState === 'none') {
+      return db
+        .prepare(
+          `INSERT OR IGNORE INTO cells
+           (nsman_id, date, state, dept, planned_by, sent_at, received_at, ended_at, ended_by, reason)
+           VALUES (?, ?, 'available', ?, '', '', '', '', '', '')`,
+        )
+        .bind(id, item.date, dept);
+    }
+    return db
+      .prepare(
+        `UPDATE cells
+         SET state = 'available', dept = ?, planned_by = '', sent_at = '', received_at = '', ended_at = '', ended_by = '', reason = ''
+         WHERE nsman_id = ? AND date = ? AND state IN ('cancelled', 'withdrawn')`,
+      )
+      .bind(dept, id, item.date);
+  });
+
+  const results = await db.batch(stmts);
+  const done = [];
+  const conflicted = [];
+  for (let i = 0; i < items.length; i++) {
+    const r = results[i];
+    if (r && r.meta && r.meta.changes === 1) {
+      done.push(items[i].date);
+    } else {
+      conflicted.push(items[i].date);
+    }
+  }
+  return { done, conflicted };
+}
+
+export async function unmarkAvailableBatchDb(db, { nsmanId, items }) {
+  if (!items || !items.length) return { done: [], unplannedDates: [], conflicted: [] };
+  const id = Number(nsmanId);
+  const stmts = items.map((item) =>
+    db
+      .prepare('DELETE FROM cells WHERE nsman_id = ? AND date = ? AND state = ?')
+      .bind(id, item.date, item.currentState),
+  );
+
+  const results = await db.batch(stmts);
+  const done = [];
+  const unplannedDates = [];
+  const conflicted = [];
+  for (let i = 0; i < items.length; i++) {
+    const r = results[i];
+    if (r && r.meta && r.meta.changes === 1) {
+      done.push(items[i].date);
+      if (items[i].wasPlanned) unplannedDates.push(items[i].date);
+    } else {
+      conflicted.push(items[i].date);
+    }
+  }
+  return { done, unplannedDates, conflicted };
 }
 
 export async function markReceivedDb(db, { nsmanId, date, nowIso }) {

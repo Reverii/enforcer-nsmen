@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   CAP,
   DEPARTMENTS,
+  MAX_BATCH_DATES,
   STATES,
   buildExportCsv,
   canAddPlanner,
@@ -17,6 +18,8 @@ import {
   maxMarkingDate,
   passHighestAdmin,
   todaySGT,
+  validateAvailabilityBatch,
+  validateBatchDatesInput,
   validateTgId,
   workYearBounds,
   workYearOf,
@@ -578,4 +581,89 @@ test('CSV export escapes quotes/commas, appends log, and guards against spreadsh
   assert.equal(lines[2], '');
   assert.equal(lines[3], 'at,actor,action,detail');
   assert.match(lines[4], /'@planner,send_saf100,\'\+cmd/);
+});
+
+test('batch availability validation: valid vs skipped reasons, dedupe, and 120-date limit', () => {
+  assert.equal(MAX_BATCH_DATES, 120);
+
+  // Empty or non-array refused with BAD_INPUT; >120 refused with TOO_MANY_DATES (400)
+  assert.equal(errCode(() => validateBatchDatesInput([])), 'BAD_INPUT');
+  assert.equal(errCode(() => validateBatchDatesInput('2026-12-01')), 'BAD_INPUT');
+  const tooMany = Array.from({ length: 121 }, (_, i) => `2027-01-${String((i % 28) + 1).padStart(2, '0')}`);
+  let overErr = null;
+  try {
+    validateAvailabilityBatch({ action: 'mark_available', dates: tooMany, today: TODAY });
+  } catch (err) {
+    overErr = err;
+  }
+  assert.equal(overErr.code, 'TOO_MANY_DATES');
+  assert.equal(overErr.status, 400);
+
+  const states = new Map([
+    ['2026-12-02', 'cancelled'],
+    ['2026-12-03', 'withdrawn'],
+    ['2026-12-04', 'available'],
+    ['2026-12-05', 'planned'],
+    ['2026-12-06', 'sent'],
+    ['2026-12-07', 'received'],
+  ]);
+
+  const markRes = validateAvailabilityBatch({
+    action: 'mark_available',
+    dates: [
+      '2026-12-01',
+      '2026-12-01', // duplicate
+      '2026-12-02',
+      '2026-12-03',
+      '2026-12-04',
+      '2026-12-05',
+      '2026-12-06',
+      '2026-12-07',
+      YESTERDAY,
+      '2028-04-01',
+      'not-a-date',
+    ],
+    existingStates: states,
+    today: TODAY,
+  });
+  assert.deepEqual(
+    markRes.valid.map((v) => v.date),
+    ['2026-12-01', '2026-12-02', '2026-12-03'],
+  );
+  assert.deepEqual(markRes.skipped, [
+    { date: '2026-12-04', reason: 'already available' },
+    { date: '2026-12-05', reason: 'already planned' },
+    { date: '2026-12-06', reason: 'SAF100 already sent' },
+    { date: '2026-12-07', reason: 'SAF100 already sent' },
+    { date: YESTERDAY, reason: 'past date' },
+    { date: '2028-04-01', reason: 'outside marking window' },
+    { date: 'not-a-date', reason: 'invalid date' },
+  ]);
+
+  const unmarkRes = validateAvailabilityBatch({
+    action: 'unmark_available',
+    dates: [
+      '2026-12-01',
+      '2026-12-04',
+      '2026-12-05',
+      '2026-12-06',
+      '2026-12-07',
+      YESTERDAY,
+    ],
+    existingStates: states,
+    today: TODAY,
+  });
+  assert.deepEqual(
+    unmarkRes.valid.map((v) => ({ date: v.date, wasPlanned: v.wasPlanned })),
+    [
+      { date: '2026-12-04', wasPlanned: false },
+      { date: '2026-12-05', wasPlanned: true },
+    ],
+  );
+  assert.deepEqual(unmarkRes.skipped, [
+    { date: '2026-12-01', reason: 'not marked' },
+    { date: '2026-12-06', reason: 'SAF100 already sent' },
+    { date: '2026-12-07', reason: 'SAF100 already sent' },
+    { date: YESTERDAY, reason: 'past date' },
+  ]);
 });

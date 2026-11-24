@@ -15,6 +15,7 @@ import {
   getAdmin,
   getAllPlanners,
   getCell,
+  getCellsInRange,
   getDeptPlanners,
   getExportData,
   getFlightDay,
@@ -25,6 +26,7 @@ import {
   getUserPlannerRows,
   joinNsman,
   loadInitData,
+  markAvailableBatchDb,
   markAvailableDb,
   markReceivedDb,
   passAdminDb,
@@ -34,6 +36,7 @@ import {
   removeSelfPlannerAtomicDb,
   renameAdminDb,
   sendSaf100AtomicDb,
+  unmarkAvailableBatchDb,
   unmarkAvailableDb,
   unplanCellDb,
   updateNsmanDb,
@@ -55,9 +58,12 @@ import {
   fmtDate,
   fmtFlightInfo,
   isHighestAdmin,
+  isValidDate,
   maxMarkingDate,
   passHighestAdmin,
   todaySGT,
+  validateAvailabilityBatch,
+  validateBatchDatesInput,
   validateDept,
   validateFlightText,
   validateName,
@@ -295,6 +301,85 @@ export async function handleRequest(request, env, ctx, opts = {}) {
         });
       }
       return jsonResponse(request, env, { ok: true, date, wasPlanned });
+    }
+
+    if (method === 'POST' && (path === '/api/cells/available-batch' || path === '/api/cells/unavailable-batch')) {
+      if (!me) throw new RuleError('NOT_JOINED', 'Join your department first.', 403);
+      const { dates } = await readJson(request);
+      validateBatchDatesInput(dates);
+
+      const validSyntaxDates = dates.filter((d) => isValidDate(d)).sort();
+      const existingStates = new Map();
+      if (validSyntaxDates.length > 0) {
+        const rows = await getCellsInRange(
+          env.DB,
+          me.id,
+          validSyntaxDates[0],
+          validSyntaxDates[validSyntaxDates.length - 1],
+        );
+        for (const r of rows) existingStates.set(r.date, r.state);
+      }
+
+      const isMark = path === '/api/cells/available-batch';
+      const action = isMark ? 'mark_available' : 'unmark_available';
+      const { valid, skipped } = validateAvailabilityBatch({
+        action,
+        dates,
+        existingStates,
+        today,
+      });
+
+      if (isMark) {
+        const { done, conflicted } = await markAvailableBatchDb(env.DB, {
+          nsmanId: me.id,
+          dept: me.dept,
+          items: valid,
+        });
+        for (const d of conflicted) skipped.push({ date: d, reason: 'already changed' });
+        if (done.length > 0) {
+          await writeLog(env.DB, {
+            at: nowIso,
+            actor: me.name,
+            action: 'mark_available_batch',
+            detail: `${me.dept} (${done.length}): ${done.join(', ')}`,
+          });
+        }
+        return jsonResponse(request, env, { ok: true, done, skipped });
+      }
+
+      const { done, unplannedDates, conflicted } = await unmarkAvailableBatchDb(env.DB, {
+        nsmanId: me.id,
+        items: valid,
+      });
+      for (const d of conflicted) skipped.push({ date: d, reason: 'already changed' });
+      const sortedUnplanned = unplannedDates.slice().sort();
+      if (done.length > 0) {
+        await writeLog(env.DB, {
+          at: nowIso,
+          actor: me.name,
+          action: sortedUnplanned.length > 0 ? 'unmark_planned_batch' : 'unmark_available_batch',
+          detail: `${me.dept} (${done.length}): ${done.join(', ')}${
+            sortedUnplanned.length ? ` (un-planned: ${sortedUnplanned.join(', ')})` : ''
+          }`,
+        });
+      }
+      if (sortedUnplanned.length > 0) {
+        const deptPlanners = await getDeptPlanners(env.DB, me.dept);
+        const text =
+          sortedUnplanned.length === 1
+            ? `${me.name} removed availability for ${fmtDate(sortedUnplanned[0])}, where they were planned.`
+            : `${me.name} removed availability for ${sortedUnplanned.length} dates where they were planned: ${sortedUnplanned.map(fmtDate).join(', ')}.`;
+        notifyInBackground({
+          ctx,
+          db: env.DB,
+          botToken: env.BOT_TOKEN,
+          recipients: deptPlanners.map((p) => ({ tgId: p.tg_id, label: p.name })),
+          text,
+          nowIso,
+          fetchImpl,
+        });
+      }
+      return jsonResponse(request, env, { ok: true, done, skipped });
     }
 
     if (method === 'POST' && path === '/api/cells/received') {

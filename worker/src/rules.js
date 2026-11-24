@@ -9,6 +9,7 @@ export const ON_PLAN_STATES = ['planned', 'sent', 'received'];
 export const MAX_REASON_LEN = 200;
 export const MAX_NAME_LEN = 60;
 export const MAX_FLIGHT_TEXT_LEN = 100;
+export const MAX_BATCH_DATES = 120;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -302,6 +303,87 @@ export function checkTransition({
     default:
       throw new RuleError('BAD_ACTION', 'Unknown action.', 400);
   }
+}
+
+export function validateBatchDatesInput(dates) {
+  if (!Array.isArray(dates) || dates.length === 0) {
+    throw new RuleError('BAD_INPUT', 'Select at least one date.', 400);
+  }
+  if (dates.length > MAX_BATCH_DATES) {
+    throw new RuleError(
+      'TOO_MANY_DATES',
+      `You can update at most ${MAX_BATCH_DATES} dates at a time.`,
+      400,
+    );
+  }
+  return dates;
+}
+
+export function batchSkipReason(err, currentState) {
+  switch (err && err.code) {
+    case 'BAD_DATE':
+      return 'invalid date';
+    case 'PAST':
+      return 'past date';
+    case 'OUT_OF_WINDOW':
+      return 'outside marking window';
+    case 'MUST_CANCEL':
+      return 'SAF100 already sent';
+    case 'INVALID_TRANSITION':
+      if (currentState === 'available') return 'already available';
+      if (currentState === 'planned') return 'already planned';
+      if (currentState === 'sent' || currentState === 'received') return 'SAF100 already sent';
+      return 'not marked';
+    default:
+      return (err && err.message) || 'not allowed';
+  }
+}
+
+export function validateAvailabilityBatch({ action, dates, existingStates = new Map(), today }) {
+  if (action !== 'mark_available' && action !== 'unmark_available') {
+    throw new RuleError('BAD_ACTION', 'Unknown batch action.', 400);
+  }
+  validateBatchDatesInput(dates);
+  assertValidDate(today);
+
+  const seen = new Set();
+  const valid = [];
+  const skipped = [];
+
+  for (const rawDate of dates) {
+    if (seen.has(rawDate)) continue;
+    seen.add(rawDate);
+    const lookup =
+      existingStates instanceof Map
+        ? existingStates.get(rawDate)
+        : existingStates && typeof existingStates === 'object'
+          ? existingStates[rawDate]
+          : undefined;
+    const currentState = lookup || 'none';
+    try {
+      const res = checkTransition({
+        action,
+        currentState,
+        date: rawDate,
+        today,
+        actorRole: 'nsman',
+      });
+      valid.push({
+        date: rawDate,
+        currentState,
+        nextState: res.nextState,
+        wasPlanned: Boolean(res.wasPlanned),
+      });
+    } catch (err) {
+      if (err instanceof RuleError) {
+        skipped.push({ date: rawDate, reason: batchSkipReason(err, currentState) });
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  return { valid, skipped };
 }
 
 export function canEditFlightDay({ actorDepts = [], isAdmin = false, dept, date, today, removing = false }) {

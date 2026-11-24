@@ -546,3 +546,129 @@ test('Highest Admin can rename self via PATCH /api/admin/me; planner and others 
   assert.equal(logs.results[1].action, 'set_flight_day');
   assert.equal(logs.results[1].actor, 'MAJ BRANDON TAN');
 });
+
+test('batch availability: marks only valid, skips past/out-of-window/sent/received, un-plans with ONE planner DM, isolates users, refuses >120', async () => {
+  await resetDb();
+  await apiReq(ADMIN_SEED, 'GET', '/api/init');
+  const lm1 = (await (await apiReq(NSMAN_LM, 'POST', '/api/join', { name: 'ME2 ALPHA', dept: 'Loadmaster' })).json()).me;
+  const lm2 = (await (await apiReq(NSMAN_LM2, 'POST', '/api/join', { name: 'ME3 BRAVO', dept: 'Loadmaster' })).json()).me;
+  await apiReq(ADMIN_SEED, 'POST', '/api/planners', {
+    tgId: String(PLANNER_NON_NSMAN.id),
+    name: 'ME4 ONG S.H.',
+    dept: 'Loadmaster',
+  });
+
+  // Non-NSman planner is refused with 403
+  const nonNsRes = await apiReq(PLANNER_NON_NSMAN, 'POST', '/api/cells/available-batch', { dates: [TOMORROW] });
+  assert.equal(nonNsRes.status, 403);
+  assert.equal((await nonNsRes.json()).code, 'NOT_JOINED');
+
+  // >120 dates refused with 400 on both endpoints
+  const over120 = Array.from({ length: 121 }, (_, i) => addDays(TODAY, i));
+  const tooManyMark = await apiReq(NSMAN_LM, 'POST', '/api/cells/available-batch', { dates: over120 });
+  assert.equal(tooManyMark.status, 400);
+  assert.equal((await tooManyMark.json()).code, 'TOO_MANY_DATES');
+  const tooManyUnmark = await apiReq(NSMAN_LM, 'POST', '/api/cells/unavailable-batch', { dates: over120 });
+  assert.equal(tooManyUnmark.status, 400);
+  assert.equal((await tooManyUnmark.json()).code, 'TOO_MANY_DATES');
+
+  const d1 = TOMORROW;
+  const d2 = DAY_AFTER;
+  const d3 = addDays(TODAY, 3);
+  const d4 = addDays(TODAY, 4);
+  const d5 = addDays(TODAY, 5);
+  const d6 = addDays(TODAY, 6);
+  const outOfWindow = `${CUR_WY + 2}-04-01`;
+
+  // Seed lm1 cells in various states + lm2 cells on overlapping dates
+  await db.batch([
+    db.prepare(`INSERT INTO cells (nsman_id, date, state, dept) VALUES (?, ?, 'cancelled', 'Loadmaster')`).bind(lm1.id, d2),
+    db.prepare(`INSERT INTO cells (nsman_id, date, state, dept, sent_at) VALUES (?, ?, 'sent', 'Loadmaster', '2026-11-24T00:00:00Z')`).bind(lm1.id, d3),
+    db.prepare(`INSERT INTO cells (nsman_id, date, state, dept, sent_at, received_at) VALUES (?, ?, 'received', 'Loadmaster', '2026-11-24T00:00:00Z', '2026-11-24T01:00:00Z')`).bind(lm1.id, d4),
+    db.prepare(`INSERT INTO cells (nsman_id, date, state, dept, planned_by) VALUES (?, ?, 'planned', 'Loadmaster', 'ME4 ONG S.H.')`).bind(lm1.id, d5),
+    db.prepare(`INSERT INTO cells (nsman_id, date, state, dept, planned_by) VALUES (?, ?, 'planned', 'Loadmaster', 'ME4 ONG S.H.')`).bind(lm1.id, d6),
+    db.prepare(`INSERT INTO cells (nsman_id, date, state, dept) VALUES (?, ?, 'available', 'Loadmaster')`).bind(lm2.id, d1),
+    db.prepare(`INSERT INTO cells (nsman_id, date, state, dept, planned_by) VALUES (?, ?, 'planned', 'Loadmaster', 'ME4 ONG S.H.')`).bind(lm2.id, d5),
+  ]);
+
+  // available-batch marks only d1 (none) and d2 (cancelled), skips sent/received/planned/past/out-of-window
+  const markRes = await apiReq(NSMAN_LM, 'POST', '/api/cells/available-batch', {
+    nsmanId: lm2.id, // ignored; own cells only
+    dates: [d1, d2, d3, d4, d5, YESTERDAY, outOfWindow],
+  });
+  assert.equal(markRes.status, 200);
+  const markData = await markRes.json();
+  assert.equal(markData.ok, true);
+  assert.deepEqual(markData.done, [d1, d2]);
+  assert.deepEqual(markData.skipped, [
+    { date: d3, reason: 'SAF100 already sent' },
+    { date: d4, reason: 'SAF100 already sent' },
+    { date: d5, reason: 'already planned' },
+    { date: YESTERDAY, reason: 'past date' },
+    { date: outOfWindow, reason: 'outside marking window' },
+  ]);
+
+  // Verify lm1 states updated and lm2 untouched
+  const lm1AfterMark = (await db.prepare('SELECT date, state FROM cells WHERE nsman_id = ? ORDER BY date').bind(lm1.id).all()).results;
+  assert.deepEqual(lm1AfterMark, [
+    { date: d1, state: 'available' },
+    { date: d2, state: 'available' },
+    { date: d3, state: 'sent' },
+    { date: d4, state: 'received' },
+    { date: d5, state: 'planned' },
+    { date: d6, state: 'planned' },
+  ]);
+  const lm2AfterMark = (await db.prepare('SELECT date, state FROM cells WHERE nsman_id = ? ORDER BY date').bind(lm2.id).all()).results;
+  assert.deepEqual(lm2AfterMark, [
+    { date: d1, state: 'available' },
+    { date: d5, state: 'planned' },
+  ]);
+
+  // unavailable-batch un-marks d1 (available) + d5 & d6 (planned), skips sent/received/past, sends ONE planner message
+  const sentDms = [];
+  const captureFetch = async (_url, init) => {
+    sentDms.push(JSON.parse(init.body));
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  const unmarkRes = await apiReq(
+    NSMAN_LM,
+    'POST',
+    '/api/cells/unavailable-batch',
+    { nsmanId: lm2.id, dates: [d1, d5, d6, d3, d4, YESTERDAY] },
+    { fetchImpl: captureFetch },
+  );
+  assert.equal(unmarkRes.status, 200);
+  const unmarkData = await unmarkRes.json();
+  assert.equal(unmarkData.ok, true);
+  assert.deepEqual(unmarkData.done, [d1, d5, d6]);
+  assert.deepEqual(unmarkData.skipped, [
+    { date: d3, reason: 'SAF100 already sent' },
+    { date: d4, reason: 'SAF100 already sent' },
+    { date: YESTERDAY, reason: 'past date' },
+  ]);
+
+  // Exactly ONE Telegram DM sent to the Loadmaster planner listing both un-planned dates
+  assert.equal(sentDms.length, 1);
+  assert.equal(sentDms[0].chat_id, String(PLANNER_NON_NSMAN.id));
+  assert.match(sentDms[0].text, /ME2 ALPHA/);
+  assert.match(sentDms[0].text, /2 dates where they were planned/);
+
+  // Verify lm1 cells: d1, d5, d6 removed; d2, d3, d4 remain; lm2 still completely untouched
+  const lm1AfterUnmark = (await db.prepare('SELECT date, state FROM cells WHERE nsman_id = ? ORDER BY date').bind(lm1.id).all()).results;
+  assert.deepEqual(lm1AfterUnmark, [
+    { date: d2, state: 'available' },
+    { date: d3, state: 'sent' },
+    { date: d4, state: 'received' },
+  ]);
+  const lm2AfterUnmark = (await db.prepare('SELECT date, state FROM cells WHERE nsman_id = ? ORDER BY date').bind(lm2.id).all()).results;
+  assert.deepEqual(lm2AfterUnmark, [
+    { date: d1, state: 'available' },
+    { date: d5, state: 'planned' },
+  ]);
+
+  // Verify batch summary log rows were recorded
+  const batchLogs = (await db.prepare("SELECT actor, action, detail FROM log WHERE action LIKE '%_batch' ORDER BY id").all()).results;
+  assert.equal(batchLogs.length, 2);
+  assert.equal(batchLogs[0].action, 'mark_available_batch');
+  assert.equal(batchLogs[1].action, 'unmark_planned_batch');
+});

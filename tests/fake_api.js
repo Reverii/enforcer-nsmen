@@ -3,6 +3,9 @@
 (function () {
   const o = window.FAKE_OPTS || {};
   const TODAY = window.APP_TODAY || '2026-11-24';
+  const CUR_WY = Number(TODAY.slice(5, 7)) >= 4 ? Number(TODAY.slice(0, 4)) : Number(TODAY.slice(0, 4)) - 1;
+  const MAX_DATE = `${CUR_WY + 2}-03-31`;
+  const MAX_BATCH_DATES = 120;
   const DEPARTMENTS = ['Pilot', 'Loadmaster', 'Tacco', 'Sup1', 'Sup2'];
   const CAP = 40;
   const ME_TG = String(o.tgId || '6982215470');
@@ -72,6 +75,32 @@
     }
   }
 
+  if (Array.isArray(o.extraFlights)) {
+    for (const f of o.extraFlights) {
+      state.flightDays.push(Object.assign({ id: state.nextId++, type: '', time: '' }, f));
+    }
+  }
+  if (Array.isArray(o.extraCells)) {
+    for (const c of o.extraCells) {
+      state.cells.push(
+        Object.assign(
+          {
+            id: state.nextId++,
+            nsman_id: 1,
+            dept: 'Loadmaster',
+            planned_by: '',
+            sent_at: '',
+            received_at: '',
+            ended_at: '',
+            ended_by: '',
+            reason: '',
+          },
+          c,
+        ),
+      );
+    }
+  }
+
   window.FAKE = { calls: [], state };
 
   function me() {
@@ -90,8 +119,8 @@
     return {
       ok: true,
       today: TODAY,
-      workYear: 2026,
-      maxDate: '2028-03-31',
+      workYear: CUR_WY,
+      maxDate: MAX_DATE,
       cap: CAP,
       departments: DEPARTMENTS,
       tgUser: { id: ME_TG, username: 'alpha' },
@@ -160,6 +189,82 @@
       const m = me();
       upsertCell(m.id, body.date, { state: 'none' });
       return { ok: true, date: body.date, wasPlanned: false };
+    }
+    if (method === 'POST' && (path === '/api/cells/available-batch' || path === '/api/cells/unavailable-batch')) {
+      const m = me();
+      if (!m) return { ok: false, code: 'NOT_JOINED', error: 'Join your department first.' };
+      const dates = body.dates;
+      if (!Array.isArray(dates) || dates.length === 0) {
+        return { ok: false, code: 'BAD_INPUT', error: 'Select at least one date.' };
+      }
+      if (dates.length > MAX_BATCH_DATES) {
+        return { ok: false, code: 'TOO_MANY_DATES', error: `You can update at most ${MAX_BATCH_DATES} dates at a time.` };
+      }
+      const isMark = path === '/api/cells/available-batch';
+      const seen = new Set();
+      const done = [];
+      const skipped = [];
+      for (const d of dates) {
+        if (seen.has(d)) continue;
+        seen.add(d);
+        if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+          skipped.push({ date: d, reason: 'invalid date' });
+          continue;
+        }
+        const [yy, mm, dd] = d.split('-').map(Number);
+        const dt = new Date(Date.UTC(yy, mm - 1, dd));
+        if (dt.getUTCFullYear() !== yy || dt.getUTCMonth() !== mm - 1 || dt.getUTCDate() !== dd) {
+          skipped.push({ date: d, reason: 'invalid date' });
+          continue;
+        }
+        if (d < TODAY) {
+          skipped.push({ date: d, reason: 'past date' });
+          continue;
+        }
+        const existing = state.cells.find((c) => c.nsman_id === m.id && c.date === d);
+        const st = existing ? existing.state : 'none';
+        if (isMark) {
+          if (d > MAX_DATE) {
+            skipped.push({ date: d, reason: 'outside marking window' });
+            continue;
+          }
+          if (st === 'available') {
+            skipped.push({ date: d, reason: 'already available' });
+            continue;
+          }
+          if (st === 'planned') {
+            skipped.push({ date: d, reason: 'already planned' });
+            continue;
+          }
+          if (st === 'sent' || st === 'received') {
+            skipped.push({ date: d, reason: 'SAF100 already sent' });
+            continue;
+          }
+          upsertCell(m.id, d, {
+            state: 'available',
+            dept: m.dept,
+            planned_by: '',
+            sent_at: '',
+            received_at: '',
+            ended_at: '',
+            ended_by: '',
+            reason: '',
+          });
+          done.push(d);
+        } else {
+          if (st === 'sent' || st === 'received') {
+            skipped.push({ date: d, reason: 'SAF100 already sent' });
+            continue;
+          }
+          if (st !== 'available' && st !== 'planned') {
+            skipped.push({ date: d, reason: 'not marked' });
+            continue;
+          }
+          upsertCell(m.id, d, { state: 'none' });
+          done.push(d);
+        }
+      }
+      return { ok: true, done, skipped };
     }
     if (method === 'POST' && path === '/api/cells/received') {
       const m = me();
