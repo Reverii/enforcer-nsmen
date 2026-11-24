@@ -186,6 +186,8 @@ line at the bottom of **My days** or the **Planner** tab.)*
 - **Exporting records:** open **Planner > NSmen > Export CSV**, choose the work year, and tap
   **Export CSV**. Inside Telegram this downloads via a short-lived signed link (5-minute expiry); the
   file includes all duties for that work year plus the audit log, with spreadsheet formula protection.
+- **Updating the page after code changes:** bump the `?v=` number on `app.css`, `app.js` and `config.js` in
+  `index.html` (and in `demo/index.html`) so phones load the new files instead of an old saved copy.
 - **Updating the Worker after code changes:** run `npm run deploy` (and if new migrations were added,
   run `npx wrangler d1 migrations apply enforcer-nsmen --remote --config worker/wrangler.toml`).
 
