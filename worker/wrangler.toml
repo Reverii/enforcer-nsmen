@@ -7,7 +7,7 @@ compatibility_date = "2025-09-06"
 [[d1_databases]]
 binding = "DB"
 database_name = "enforcer-nsmen"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "1db69a4a-edd2-4079-9cd1-f61e132cb8d9"
 migrations_dir = "migrations"
 
 [vars]
