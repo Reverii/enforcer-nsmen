@@ -23,7 +23,7 @@ Do this **first**, while you still have the **Admin** tab.
    review the confirmation warning, and tap **Pass on Highest Admin** a second time to confirm.
 4. The incoming person receives a bot DM (`You're now the Highest Admin of Enforcer NSMEN.`) and now
    controls the **Admin** tab and planning for all five departments. You immediately lose the Highest
-   Admin role (even if your old Telegram ID is still in `HIGHEST_ADMIN_TG_ID` in `worker/wrangler.toml`,
+   Admin role (even if your old Telegram ID is still in the `HIGHEST_ADMIN_TG_ID` Cloudflare secret,
    the stored database value wins).
 5. *(Optional)* If you are also stepping down as a department planner, the new Highest Admin can remove
    you from any department in the **Admin** tab, or you can tap **Step down** in
@@ -58,7 +58,7 @@ Choose whichever matches your setup:
 4. Have them accept the invite, log in to Cloudflare, and test running `npx wrangler login` and
    `npx wrangler d1 info enforcer-nsmen` from their machine.
 5. Note: `BOT_TOKEN` is stored as an encrypted Cloudflare secret and does not need to be re-entered
-   unless you rotate the bot token. `HIGHEST_ADMIN_TG_ID` in `worker/wrangler.toml` is only a first-run
+   unless you rotate the bot token. the `HIGHEST_ADMIN_TG_ID` Cloudflare secret is only a first-run
    seed and does not need to be changed after handover (though updating it to match the new admin is
    harmless).
 
