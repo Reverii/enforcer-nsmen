@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Enforcer NSMEN demo</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="../app.css">
+<style>
+  /* Demo-only bar: who you're viewing as, and a reset. Not part of the real app. */
+  .demobar { position: sticky; top: 0; z-index: 50; background: var(--primary); color: var(--on-primary);
+    padding: 8px max(12px, env(safe-area-inset-left, 0px)); display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    font: 13px/18px var(--font); }
+  .demobar b { font-weight: 700; margin-right: 2px; }
+  .demobar select, .demobar button { height: 30px; border-radius: 6px; border: 0; padding: 0 8px; font: inherit;
+    background: var(--surface); color: var(--text); }
+  .demobar select { -webkit-appearance: auto; appearance: auto; }
+  .demobar .sp { flex: 1; }
+  .app { min-height: calc(100dvh - 46px); }
+</style>
+</head>
+<body>
+<div class="demobar" role="region" aria-label="Demo controls">
+  <b>Demo</b>
+  <label for="demoRole" style="position:absolute;left:-9999px">View as</label>
+  <select id="demoRole">
+    <option value="ns">NSman</option>
+    <option value="new">New NSman</option>
+    <option value="pl">Planner</option>
+    <option value="ad">Highest Admin</option>
+  </select>
+  <span class="sp"></span>
+  <button id="demoReset" type="button">Reset</button>
+</div>
+<div class="app" id="app">
+  <main class="screen" id="screen">
+    <p class="center note">Loading…</p>
+  </main>
+  <nav class="tabs" id="tabs" hidden></nav>
+  <div id="overlay"></div>
+</div>
+<!-- Demo setup, then the fake backend from the tests, then the real app -->
+<script src="demo.js"></script>
+<script src="../tests/fake_api.js"></script>
+<script src="demo-seed.js"></script>
+<script src="../app.js"></script>
+</body>
+</html>
