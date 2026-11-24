@@ -225,7 +225,8 @@ test('NSman marks available, confirms SAF100 received, and cancels SAF100 with r
   await page.getByRole('button', { name: 'Cancel SAF100' }).click();
   await page.locator('#why').fill('Work trip');
   await page.getByRole('button', { name: 'Cancel SAF100 for Wed 9 Dec' }).click();
-  await page.locator('#nscal [data-d="2026-12-09"].s-ended').waitFor();
+  await page.locator('#nscal [data-d="2026-12-09"].s-cancelled').waitFor();
+  assert.equal(await page.locator('#nscal [data-d="2026-12-09"] .w').innerText(), 'Cancelled');
 
   assert.deepEqual(page.errors, []);
   await page.close();
@@ -348,7 +349,7 @@ test('Tap-to-mark: 4 taps batch after debounce, toggle undo, tap-untap sends not
   // Select days mode is completely gone; helper line updated
   assert.equal(await page.locator('#selModeBtn').count(), 0);
   assert.equal(await page.locator('#selbar').count(), 0);
-  await page.getByText('Tap the days you can fly. Tap again to undo. A bar under the date means Loadmaster is flying.').waitFor();
+  await page.getByText('Tap the days you can fly. Tap again to undo. A plane icon means Loadmaster is flying.').waitFor();
 
   // Go to December 2026
   await page.getByRole('button', { name: 'Next month' }).click();
@@ -359,7 +360,7 @@ test('Tap-to-mark: 4 taps batch after debounce, toggle undo, tap-untap sends not
   assert.match(await dec16.getAttribute('aria-label'), /Wed 16 Dec: Not marked.*tap to mark available/);
   assert.equal(await dec16.getAttribute('aria-pressed'), 'false');
   const dec15 = page.locator('#nscal [data-d="2026-12-15"]');
-  assert.match(await dec15.getAttribute('aria-label'), /Tue 15 Dec: Available.*tap to remove/);
+  assert.match(await dec15.getAttribute('aria-label'), /Tue 15 Dec: Free.*tap to remove/);
   assert.equal(await dec15.getAttribute('aria-pressed'), 'true');
 
   // Tap 4 free dates in a row: marks all 4 immediately, no sheet opens, sends ONE batch call after debounce
@@ -563,4 +564,265 @@ test('Tap-to-mark fits 360px viewport and saves light/dark screenshots after mar
   await narrow.getByText('December 2026').waitFor();
   assert.ok(await narrow.evaluate(() => document.documentElement.scrollWidth <= 360));
   await narrow.close();
+});
+
+test('Day markers: every state renders its word in calendar, flight rows, sheets and grid; today shows filled circle; flight day shows plane; fits 360px', async () => {
+  const page = await open({
+    width: 360,
+    plannerDepts: ['Loadmaster'],
+    extraFlights: [
+      { dept: 'Loadmaster', date: '2026-11-24', type: 'C-130', time: '0800-1500' }, // today is a flight day
+      { dept: 'Loadmaster', date: '2026-12-03', type: 'C-130', time: '0800-1500' }, // none
+      { dept: 'Loadmaster', date: '2026-12-11', type: 'C-130', time: '0900-1600' }, // planned
+      { dept: 'Loadmaster', date: '2026-12-12', type: 'C-130', time: '0900-1600' }, // received
+      { dept: 'Loadmaster', date: '2026-12-19', type: 'C-130', time: '0900-1600' }, // cancelled
+      { dept: 'Loadmaster', date: '2026-12-22', type: 'C-130', time: '0900-1600' }, // withdrawn
+    ],
+    extraCells: [
+      { nsman_id: 1, date: '2026-12-11', state: 'planned', planned_by: 'ME4 ONG S.H.' },
+      { nsman_id: 1, date: '2026-12-12', state: 'received', planned_by: 'ME4 ONG S.H.' },
+      { nsman_id: 1, date: '2026-12-19', state: 'cancelled', reason: 'Overseas', ended_by: 'ME2 ALPHA' },
+      { nsman_id: 1, date: '2026-12-22', state: 'withdrawn', reason: 'Sortie cut', ended_by: 'ME4 ONG S.H.' },
+      { nsman_id: 2, date: '2026-12-19', state: 'withdrawn', reason: 'Sortie cut', ended_by: 'ME4 ONG S.H.' },
+      { nsman_id: 3, date: '2026-12-19', state: 'available' },
+    ],
+  });
+
+  // November 2026 (My days): today shows filled circle, flight day shows plane SVG, no bar under date
+  await page.getByRole('heading', { name: 'My days' }).waitFor();
+  const calTodayStyle = await page.evaluate(() => {
+    const day = document.querySelector('#nscal [data-d="2026-11-24"]');
+    const num = day.querySelector('.d');
+    const cs = getComputedStyle(num);
+    const after = getComputedStyle(day, '::after');
+    return {
+      isToday: day.classList.contains('today'),
+      hasPlane: !!day.querySelector('svg.fl'),
+      bg: cs.backgroundColor,
+      color: cs.color,
+      radius: cs.borderRadius,
+      decoration: cs.textDecorationLine,
+      afterContent: after.content,
+    };
+  });
+  assert.equal(calTodayStyle.isToday, true);
+  assert.equal(calTodayStyle.hasPlane, true);
+  assert.equal(calTodayStyle.bg, 'rgb(10, 10, 10)');
+  assert.equal(calTodayStyle.color, 'rgb(255, 255, 255)');
+  assert.equal(calTodayStyle.radius, '50%');
+  assert.equal(calTodayStyle.decoration, 'none');
+  assert.equal(calTodayStyle.afterContent, 'none');
+
+  // December 2026 (My days): every state word + colour + no P/S/R/outline/hatch + fits at 360px
+  await page.getByRole('button', { name: 'Next month' }).click();
+  await page.getByText('December 2026').waitFor();
+
+  assert.equal(await page.locator('#nscal .tag').count(), 0, 'old P/S/R .tag removed');
+  assert.equal(await page.locator('#nscal .s-ended').count(), 0, 'old .s-ended removed');
+
+  const expectedCal = [
+    ['2026-12-03', 's-none', '', null],
+    ['2026-12-15', 's-available', 'Free', 'rgb(226, 243, 236)'],
+    ['2026-12-11', 's-planned', 'Planned', 'rgb(253, 240, 211)'],
+    ['2026-12-09', 's-sent', 'Sent', 'rgb(29, 95, 191)'],
+    ['2026-12-12', 's-received', 'Got it', 'rgb(29, 95, 191)'],
+    ['2026-12-19', 's-cancelled', 'Cancelled', 'rgb(253, 232, 230)'],
+    ['2026-12-22', 's-withdrawn', 'Withdrawn', 'rgb(253, 232, 230)'],
+  ];
+
+  for (const [date, cls, word, bg] of expectedCal) {
+    const info = await page.evaluate((d) => {
+      const el = document.querySelector(`#nscal [data-d="${d}"]`);
+      const w = el.querySelector('.w');
+      const cs = getComputedStyle(el);
+      const dayRect = el.getBoundingClientRect();
+      const wRect = w ? w.getBoundingClientRect() : null;
+      return {
+        classes: [...el.classList],
+        word: w ? w.textContent : '',
+        bg: cs.backgroundColor,
+        bgImg: cs.backgroundImage,
+        shadow: cs.boxShadow,
+        hasPlane: !!el.querySelector('svg.fl'),
+        fits: !wRect || (wRect.width <= dayRect.width + 0.5 && wRect.height <= 16),
+      };
+    }, date);
+    assert.ok(info.classes.includes(cls), `${date} has class ${cls}`);
+    assert.equal(info.word, word, `${date} calendar word`);
+    assert.equal(info.hasPlane, true, `${date} flight plane icon`);
+    assert.equal(info.bgImg, 'none', `${date} no diagonal hatch`);
+    assert.equal(info.shadow, 'none', `${date} no outline box`);
+    assert.equal(info.fits, true, `${date} ("${word}") fits cell at 360px without clipping or wrapping`);
+    if (bg) assert.equal(info.bg, bg, `${date} background tint`);
+  }
+
+  // Flight list rows under calendar show full words & matching pills
+  const expectedRows = [
+    ['2026-12-03', 'p-none', 'Not marked'],
+    ['2026-12-09', 'p-sent', 'SAF100 sent'],
+    ['2026-12-11', 'p-planned', 'Planned'],
+    ['2026-12-12', 'p-received', 'SAF100 received'],
+    ['2026-12-15', 'p-available', 'Free'],
+    ['2026-12-19', 'p-cancelled', 'Cancelled'],
+    ['2026-12-22', 'p-withdrawn', 'Withdrawn'],
+  ];
+  for (const [date, cls, text] of expectedRows) {
+    const pill = page.locator(`.list .lrow[data-d="${date}"] .pill.${cls}`);
+    assert.equal(await pill.innerText(), text);
+  }
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 360));
+
+  // Switch to Planner tab: check today circle & flight plane in grid header (November 2026)
+  await page.locator('#tabPlanner').click();
+  await page.getByRole('heading', { name: 'Planner' }).waitFor();
+
+  const gridTodayStyle = await page.evaluate(() => {
+    const th = document.querySelector('th.dh.today');
+    const b = th.querySelector('b');
+    const btn = th.querySelector('button');
+    const cs = getComputedStyle(b);
+    const after = getComputedStyle(btn, '::after');
+    return {
+      isFlight: th.classList.contains('fl'),
+      hasPlane: !!btn.querySelector('svg.fl'),
+      bg: cs.backgroundColor,
+      color: cs.color,
+      radius: cs.borderRadius,
+      decoration: cs.textDecorationLine,
+      afterContent: after.content,
+      colBg: getComputedStyle(btn).backgroundColor,
+    };
+  });
+  assert.equal(gridTodayStyle.isFlight, true);
+  assert.equal(gridTodayStyle.hasPlane, true);
+  assert.equal(gridTodayStyle.bg, 'rgb(10, 10, 10)');
+  assert.equal(gridTodayStyle.color, 'rgb(255, 255, 255)');
+  assert.equal(gridTodayStyle.radius, '50%');
+  assert.equal(gridTodayStyle.decoration, 'none');
+  assert.equal(gridTodayStyle.afterContent, 'none');
+  assert.equal(gridTodayStyle.colBg, 'rgb(238, 241, 245)');
+
+  // December 2026 (Planner grid): every state short word + dot for none + fits at 360px
+  await page.getByRole('button', { name: 'Next month' }).click();
+  await page.getByText('December 2026').waitFor();
+
+  const expectedGrid = [
+    ['2026-12-03', 's-none', '', null],
+    ['2026-12-15', 's-available', 'Free', 'rgb(226, 243, 236)'],
+    ['2026-12-11', 's-planned', 'Plan', 'rgb(253, 240, 211)'],
+    ['2026-12-09', 's-sent', 'Sent', 'rgb(29, 95, 191)'],
+    ['2026-12-12', 's-received', 'Got it', 'rgb(29, 95, 191)'],
+    ['2026-12-19', 's-cancelled', 'Cxl', 'rgb(253, 232, 230)'],
+    ['2026-12-22', 's-withdrawn', 'W/d', 'rgb(253, 232, 230)'],
+  ];
+  for (const [date, cls, word, bg] of expectedGrid) {
+    const info = await page.evaluate((d) => {
+      const btn = document.querySelector(`td.c button[data-p="1"][data-d="${d}"]`);
+      const cs = getComputedStyle(btn);
+      const before = getComputedStyle(btn, '::before');
+      return {
+        classes: [...btn.classList],
+        word: btn.textContent,
+        bg: cs.backgroundColor,
+        bgImg: cs.backgroundImage,
+        shadow: cs.boxShadow,
+        beforeContent: before.content,
+        fits: btn.scrollWidth <= btn.clientWidth + 1,
+      };
+    }, date);
+    assert.ok(info.classes.includes(cls), `grid ${date} has class ${cls}`);
+    assert.equal(info.word, word, `grid ${date} short word`);
+    assert.equal(info.bgImg, 'none');
+    assert.equal(info.shadow, 'none');
+    assert.equal(info.fits, true, `grid ${date} ("${word}") fits cell at 360px`);
+    if (bg) {
+      assert.equal(info.bg, bg, `grid ${date} background tint`);
+    } else {
+      assert.notEqual(info.beforeContent, 'none', 'unmarked grid cell keeps small dot');
+    }
+  }
+
+  // Who's-free day sheet uses full-word coloured pills without strikethrough
+  await page.locator('th.dh button[data-h="2026-12-19"]').click();
+  await page.locator('.sheet').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('.sheet .pill.p-available').innerText(), 'Free');
+  assert.equal(await page.locator('.sheet .pill.p-cancelled').innerText(), 'Cancelled');
+  assert.equal(await page.locator('.sheet .pill.p-withdrawn').innerText(), 'Withdrawn');
+  const cxlDeco = await page.locator('.sheet .pill.p-cancelled').evaluate((el) => getComputedStyle(el).textDecorationLine);
+  assert.equal(cxlDeco, 'none');
+  await page.locator('.sheet #close').click();
+
+  // Cell sheet uses full-word coloured pill
+  await page.locator('td.c button[data-p="1"][data-d="2026-12-22"]').click();
+  await page.locator('.sheet').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('.sheet .pill.p-withdrawn').innerText(), 'Withdrawn');
+  await page.locator('.sheet #close').click();
+
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 360));
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test('Day markers demo screenshots: My days and planner grid in light and dark at 390x844', async () => {
+  const screensDir = path.join(ROOT, 'tests', 'screens');
+  fs.mkdirSync(screensDir, { recursive: true });
+  const demoSeedSrc = fs.readFileSync(path.join(ROOT, 'demo', 'demo-seed.js'), 'utf8');
+
+  async function openDemoRole(role, colorScheme) {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.emulateMedia({ colorScheme });
+    page.setDefaultTimeout(5000);
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.route('https://telegram.org/**', (r) => r.fulfill({ body: '', contentType: 'text/javascript' }));
+    await page.addInitScript(({ role, colorScheme }) => {
+      window.APP_TODAY = '2026-11-24';
+      window.DEMO_ROLE = role;
+      window.FAKE_OPTS = {
+        tgId: role === 'ns' ? '6982215470' : '6120458831',
+        joined: role === 'ns',
+        isAdmin: false,
+        plannerDepts: role === 'pl' ? ['Loadmaster'] : [],
+        plannerName: role === 'pl' ? 'ME4 ONG S.H.' : '',
+        delay: 0,
+      };
+      window.Telegram = {
+        WebApp: {
+          initData: 'demo',
+          colorScheme,
+          themeParams: {},
+          ready() {},
+          expand() {},
+          onEvent() {},
+          requestWriteAccess(cb) { if (cb) cb(true); },
+          setHeaderColor() {},
+          setBackgroundColor() {},
+          setBottomBarColor() {},
+        },
+      };
+    }, { role, colorScheme });
+    await page.addInitScript({ content: fs.readFileSync(path.join(import.meta.dirname, 'fake_api.js'), 'utf8') });
+    await page.addInitScript({ content: demoSeedSrc });
+    await page.goto(base);
+    page.errors = errors;
+    return page;
+  }
+
+  for (const theme of ['light', 'dark']) {
+    const mine = await openDemoRole('ns', theme);
+    await mine.getByRole('heading', { name: 'My days' }).waitFor();
+    await mine.getByRole('button', { name: 'Next month' }).click();
+    await mine.getByText('December 2026').waitFor();
+    await mine.screenshot({ path: path.join(screensDir, `markers-mine-${theme}.png`) });
+    assert.deepEqual(mine.errors, []);
+    await mine.close();
+
+    const grid = await openDemoRole('pl', theme);
+    await grid.getByRole('heading', { name: 'Planner' }).waitFor();
+    await grid.getByRole('button', { name: 'Next month' }).click();
+    await grid.getByText('December 2026').waitFor();
+    await grid.screenshot({ path: path.join(screensDir, `markers-grid-${theme}.png`) });
+    assert.deepEqual(grid.errors, []);
+    await grid.close();
+  }
 });

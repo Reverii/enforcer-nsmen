@@ -15,10 +15,10 @@ they have used.
 - **Marking availability (tap-to-mark):** tap any free date from today up to the end of the next work
   year to mark it available immediately (no pop-up), or tap it again to undo; changes save together in a
   batch after a short pause. Use **Mark all `<Dept>` flight days** to mark every remaining future flight
-  day in the shown month at once. Your department's flight days have a bar under the date and are listed
-  below the calendar with their flight type and time (tapping a free flight row toggles it too). Planned,
-  sent, and received dates open a details sheet to confirm receipt, come off the plan, or cancel an
-  SAF100.
+  day in the shown month at once. Your department's flight days have a plane icon in the top-right corner of
+  the date and are listed below the calendar with their flight type and time (tapping a free flight row
+  toggles it too). Planned, sent, and received dates open a details sheet to confirm receipt, come off the
+  plan, or cancel an SAF100.
 - **Planning (planners and Highest Admin):** open the **Planner** tab. Tap any date header in the grid
   to see everyone who is free (sorted by fewest SAF100 days used first) and plan several people at once,
   or post/edit that day's flight details.

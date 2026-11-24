@@ -12,13 +12,31 @@
   const ON_PLAN = ['planned', 'sent', 'received'];
   const STATE_WORD = {
     none: 'Not marked',
-    available: 'Available',
+    available: 'Free',
     planned: 'Planned',
     sent: 'SAF100 sent',
     received: 'SAF100 received',
-    cancelled: 'Cancelled by NSman',
-    withdrawn: 'Withdrawn by planner',
+    cancelled: 'Cancelled',
+    withdrawn: 'Withdrawn',
   };
+  const CAL_WORD = {
+    available: 'Free',
+    planned: 'Planned',
+    sent: 'Sent',
+    received: 'Got it',
+    cancelled: 'Cancelled',
+    withdrawn: 'Withdrawn',
+  };
+  const GRID_WORD = {
+    available: 'Free',
+    planned: 'Plan',
+    sent: 'Sent',
+    received: 'Got it',
+    cancelled: 'Cxl',
+    withdrawn: 'W/d',
+  };
+  const PLANE_SVG =
+    '<svg class="fl" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 1c.6 0 1 .5 1 1.2v3.6l5.5 3v1.5L9 8.6v3.3l1.8 1.3V14.5L8 13.7l-2.8.8v-1.3L7 11.9V8.6L1.5 10.3V8.8l5.5-3V2.2C7 1.5 7.4 1 8 1z"/></svg>';
 
   const $ = (id) => document.getElementById(id);
 
@@ -89,9 +107,8 @@
   };
   const wyLabel = (y) => `Apr ${y} – Mar ${y + 1}`;
   const countsTowardCap = (st) => st === 'sent' || st === 'received';
-  const pillCls = (s) => (s === 'cancelled' || s === 'withdrawn' ? 'p-ended' : 'p-' + s);
-  const sCls = (s) => (s === 'cancelled' || s === 'withdrawn' ? 's-ended' : 's-' + s);
-  const tagOf = (s) => ({ planned: 'P', sent: 'S', received: 'R' }[s] || '');
+  const pillCls = (s) => 'p-' + s;
+  const sCls = (s) => 's-' + s;
   const flInfo = (f) => (f ? [f.type, f.time].filter(Boolean).join(' · ') || 'No details added' : '');
   const chev = (dir) =>
     `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="${dir < 0 ? 'M10 3 5 8l5 5' : 'M6 3l5 5-5 5'}"/></svg>`;
@@ -1131,8 +1148,11 @@
         : markable
           ? ' aria-pressed="false"'
           : '';
-      grid += `<button class="${cls}" type="button" data-d="${ds}" aria-label="${esc(lab)}" title="${esc(lab)}"${ariaAttrs}><span class="d num">${d}</span>${
-        tagOf(c.state) ? `<span class="tag">${tagOf(c.state)}</span>` : ''
+      const calWord = CAL_WORD[c.state] || '';
+      grid += `<button class="${cls}" type="button" data-d="${ds}" aria-label="${esc(lab)}" title="${esc(lab)}"${ariaAttrs}>${
+        f ? PLANE_SVG : ''
+      }<span class="d num">${d}</span>${
+        calWord ? `<span class="w">${calWord}</span>` : ''
       }</button>`;
     }
 
@@ -1192,7 +1212,7 @@
         <button class="btn sec small" id="markFlightsBtn" type="button" ${markableFlights.length ? '' : 'disabled'}>Mark all ${esc(p.dept)} flight days</button>
       </div>
       <div class="cal" id="nscal">${grid}</div>
-      <p class="note" style="margin:8px 0 0">Tap the days you can fly. Tap again to undo. A bar under the date means ${esc(p.dept)} is flying.</p>
+      <p class="note" style="margin:8px 0 0">Tap the days you can fly. Tap again to undo. A plane icon means ${esc(p.dept)} is flying.</p>
       <div class="list">
         <h4>${esc(p.dept)} flights in ${MONTHS[m]} <span class="num">${fl.length}</span></h4>
         ${rows || `<p class="note" style="margin:0">No ${esc(p.dept)} flights posted for ${MONTHS[m]} yet. You can still mark the days you're free.</p>`}
@@ -1349,7 +1369,7 @@
         const ds = iso(y, m, d);
         const di = dowIdx(ds);
         const f = flightOf(dept, ds);
-        head += `<th class="dh ${f ? 'fl' : ''} ${di > 4 ? 'we' : ''} ${isToday(ds) ? 'today' : ''}" scope="col"><button data-h="${ds}" aria-label="${nice(ds)}${f ? ', flight day' : ''}. Open day">${DOW[di].slice(0, 2)}<b class="num">${d}</b></button></th>`;
+        head += `<th class="dh ${f ? 'fl' : ''} ${di > 4 ? 'we' : ''} ${isToday(ds) ? 'today' : ''}" scope="col"><button data-h="${ds}" aria-label="${nice(ds)}${f ? ', flight day' : ''}. Open day">${f ? PLANE_SVG : ''}${DOW[di].slice(0, 2)}<b class="num">${d}</b></button></th>`;
       }
       let freeRow = `<th class="nm sum" scope="row">Free</th>`;
       let onRow = `<th class="nm sum" scope="row">On the plan</th>`;
@@ -1369,13 +1389,14 @@
           const ds = iso(y, m, d);
           const c = cellOf(p.id, ds);
           const f = flightOf(dept, ds);
-          r += `<td class="c ${f ? 'fl' : ''}"><button class="${sCls(c.state)} ${isPast(ds) ? 'past' : ''}" data-p="${p.id}" data-d="${ds}" aria-label="${esc(p.name)}, ${nice(ds)}: ${STATE_WORD[c.state]}">${tagOf(c.state)}</button></td>`;
+          const gridWord = GRID_WORD[c.state] || '';
+          r += `<td class="c ${f ? 'fl' : ''}"><button class="${sCls(c.state)} ${isPast(ds) ? 'past' : ''}" data-p="${p.id}" data-d="${ds}" aria-label="${esc(p.name)}, ${nice(ds)}: ${STATE_WORD[c.state]}">${gridWord}</button></td>`;
         }
         return `<tr>${r}</tr>`;
       }).join('');
 
       view = `<div class="gridwrap"><table class="plan"><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${n + 1}" class="note" style="padding:16px 0">No NSmen in ${esc(dept)} yet.</td></tr>`}</tbody></table></div>
-        <p class="note flnote">Tap a date to see who's free and plan several at once. Shaded columns are ${esc(dept)} flight days.</p>`;
+        <p class="note flnote">Tap a date to see who's free and plan several at once. Shaded columns with a plane icon are ${esc(dept)} flight days.</p>`;
     } else if (S.plView === 'flights') {
       const rows = fl.map((f) => {
         const cs = crew.map((p) => cellOf(p.id, f.date).state);
@@ -1576,10 +1597,10 @@
       <div class="daylist"><h6>On the plan <span class="num">${onPlan.length}</span></h6>
         ${onPlan.map((p) => `<div class="drow"><span></span><span>${esc(p.name)}<span class="sub num">${usedInWy(p.id, wy)}/${S.cap} used${capNote(p)}</span></span><span class="pill ${pillCls(cellOf(p.id, d).state)}">${STATE_WORD[cellOf(p.id, d).state]}</span></div>`).join('') || `<p class="note" style="margin:0">Nobody planned yet.</p>`}
       </div>
-      <div class="daylist"><h6>Available <span>fewest SAF100 days first</span></h6>
-        ${free.map((p) => `<div class="drow"><input type="checkbox" id="pk-${p.id}" data-pick="${p.id}" ${past ? 'disabled' : ''}><label for="pk-${p.id}">${esc(p.name)}<span class="sub num">${usedInWy(p.id, wy)}/${S.cap} used${newNote(p)}${capNote(p)}</span></label><span class="pill p-available">Available</span></div>`).join('') || `<p class="note" style="margin:0">Nobody else has marked this day.</p>`}
+      <div class="daylist"><h6>Free <span>fewest SAF100 days first</span></h6>
+        ${free.map((p) => `<div class="drow"><input type="checkbox" id="pk-${p.id}" data-pick="${p.id}" ${past ? 'disabled' : ''}><label for="pk-${p.id}">${esc(p.name)}<span class="sub num">${usedInWy(p.id, wy)}/${S.cap} used${newNote(p)}${capNote(p)}</span></label><span class="pill p-available">${STATE_WORD.available}</span></div>`).join('') || `<p class="note" style="margin:0">Nobody else has marked this day.</p>`}
       </div>
-      ${ended.length ? `<div class="daylist"><h6>Dropped out <span class="num">${ended.length}</span></h6>${ended.map((p) => `<div class="drow"><span></span><span>${esc(p.name)}<span class="sub">${esc(cellOf(p.id, d).reason || '')}</span></span><span class="pill p-ended">${cellOf(p.id, d).state === 'cancelled' ? 'Cancelled' : 'Withdrawn'}</span></div>`).join('')}</div>` : ''}
+      ${ended.length ? `<div class="daylist"><h6>Dropped out <span class="num">${ended.length}</span></h6>${ended.map((p) => `<div class="drow"><span></span><span>${esc(p.name)}<span class="sub">${esc(cellOf(p.id, d).reason || '')}</span></span><span class="pill ${pillCls(cellOf(p.id, d).state)}">${STATE_WORD[cellOf(p.id, d).state]}</span></div>`).join('')}</div>` : ''}
       <p class="note" style="margin:0 0 14px">${t.none} not marked this day.</p>
       <div id="pickmsg"></div>`;
 
