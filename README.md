@@ -12,11 +12,13 @@ they have used.
 
 - **First open (NSmen):** enter your rank and name and pick your one department. You join straight away
   and your department's planners get a Telegram message.
-- **Marking availability:** tap any date from today up to the end of the next work year. Your
-  department's flight days have a bar under the date and are listed below the calendar with their
-  flight type and time.
-- **Select days (multi-select):** tap **Select days** on **My days** to tick multiple dates across
-  months (or use **All `<Dept>` flight days this month**) and mark or remove them in one batch.
+- **Marking availability (tap-to-mark):** tap any free date from today up to the end of the next work
+  year to mark it available immediately (no pop-up), or tap it again to undo; changes save together in a
+  batch after a short pause. Use **Mark all `<Dept>` flight days** to mark every remaining future flight
+  day in the shown month at once. Your department's flight days have a bar under the date and are listed
+  below the calendar with their flight type and time (tapping a free flight row toggles it too). Planned,
+  sent, and received dates open a details sheet to confirm receipt, come off the plan, or cancel an
+  SAF100.
 - **Planning (planners and Highest Admin):** open the **Planner** tab. Tap any date header in the grid
   to see everyone who is free (sorted by fewest SAF100 days used first) and plan several people at once,
   or post/edit that day's flight details.

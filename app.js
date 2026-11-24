@@ -48,11 +48,11 @@
     plView: 'grid',    // grid | flights | people
     exportWy: null,
     inFlight: 0,
-    selecting: false,
-    selected: new Set(),
-    removeConfirmSig: '',
   };
 
+  const TAP_DEBOUNCE_MS = 800;
+  let tapQueue = new Map(); // date -> { target: 'available' | 'none', origCell: object | null }
+  let tapTimer = null;
   let toastTimer = null;
   let refreshTimer = null;
   let refreshing = false;
@@ -95,56 +95,186 @@
   const flInfo = (f) => (f ? [f.type, f.time].filter(Boolean).join(' · ') || 'No details added' : '');
   const chev = (dir) =>
     `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="${dir < 0 ? 'M10 3 5 8l5 5' : 'M6 3l5 5-5 5'}"/></svg>`;
-  const tickIcon = () =>
-    `<span class="tick" aria-hidden="true"><svg viewBox="0 0 12 12"><path d="M2.2 6.2 4.8 8.8 9.8 3.4"/></svg></span>`;
   const isMarkableState = (st) => st === 'none' || st === 'cancelled' || st === 'withdrawn';
-  const isRemovableState = (st) => st === 'available' || st === 'planned';
-  const isSelectableInBatch = (ds, st) => {
-    if (isPast(ds)) return false;
-    if (S.maxDate && ds > S.maxDate) return false;
-    if (st === 'sent' || st === 'received') return false;
-    return true;
-  };
-  function exitSelectMode() {
-    S.selecting = false;
-    S.selected.clear();
-    S.removeConfirmSig = '';
-  }
-  function formatBatchToast(verb, suffix, done, skipped) {
-    const dLen = done.length;
-    const sLen = skipped.length;
-    const reasons = [...new Set(skipped.map((x) => x && x.reason).filter(Boolean))];
+  function formatTapToast(markDone, markSkipped, unmarkDone, unmarkSkipped) {
+    const totalDone = markDone.length + unmarkDone.length;
+    const allSkipped = markSkipped.concat(unmarkSkipped);
+    const totalSkipped = allSkipped.length;
+    const dayWord = (n) => (n === 1 ? 'day' : 'days');
+    if (totalSkipped === 0) {
+      return totalDone > 0 ? { msg: `Saved ${totalDone} ${dayWord(totalDone)}`, isError: false } : null;
+    }
+    const reasons = [...new Set(allSkipped.map((x) => x && x.reason).filter(Boolean))];
     const reasonText = reasons.length ? ` (${reasons.join(', ')})` : '';
-    if (dLen > 0 && sLen === 0) {
-      return `${verb} ${dLen} ${dLen === 1 ? 'day' : 'days'}${suffix ? ' ' + suffix : ''}`;
+    const verb =
+      markSkipped.length > 0 && unmarkSkipped.length === 0
+        ? 'mark'
+        : unmarkSkipped.length > 0 && markSkipped.length === 0
+          ? 'remove'
+          : 'update';
+    const skipPart = `Couldn't ${verb} ${totalSkipped} ${dayWord(totalSkipped)}${reasonText}`;
+    if (totalDone > 0) {
+      return { msg: `Saved ${totalDone} ${dayWord(totalDone)}. ${skipPart}`, isError: true };
     }
-    if (dLen > 0 && sLen > 0) {
-      return `${verb} ${dLen} ${dLen === 1 ? 'day' : 'days'}; ${sLen} skipped${reasonText}`;
-    }
-    if (sLen > 0) {
-      return `0 days ${verb.toLowerCase()}; ${sLen} skipped${reasonText}`;
-    }
-    return 'No changes made';
+    return { msg: skipPart, isError: true };
   }
-  function ensureSelBar() {
-    let bar = $('selbar');
-    if (!bar) {
-      bar = document.createElement('div');
-      bar.id = 'selbar';
-      bar.className = 'selbar';
-      bar.hidden = true;
-      $('app').insertBefore(bar, $('tabs'));
+  function scheduleTapFlush() {
+    if (tapTimer) {
+      clearTimeout(tapTimer);
+      tapTimer = null;
     }
-    return bar;
+    if (tapQueue.size === 0) return;
+    const ms = window.APP_TAP_DEBOUNCE_MS != null ? window.APP_TAP_DEBOUNCE_MS : TAP_DEBOUNCE_MS;
+    tapTimer = setTimeout(() => {
+      tapTimer = null;
+      flushTapQueue();
+    }, ms);
   }
-  function hideSelBar() {
-    const bar = $('selbar');
-    if (bar) {
-      bar.hidden = true;
-      bar.innerHTML = '';
+  function queueDayToggle(ds, forceTarget) {
+    const me = S.me;
+    if (!me || isPast(ds)) return false;
+    const cur = cellOf(me.id, ds);
+    let target = forceTarget;
+    if (!target) {
+      if (isMarkableState(cur.state)) target = 'available';
+      else if (cur.state === 'available') target = 'none';
+      else return false;
     }
-    const app = $('app');
-    if (app) app.classList.remove('selecting');
+    if (target === 'available' && S.maxDate && ds > S.maxDate) return false;
+
+    const existingQueued = tapQueue.get(ds);
+    if (existingQueued) {
+      const origState = existingQueued.origCell ? existingQueued.origCell.state : 'none';
+      const matchesOrig =
+        (target === 'available' && origState === 'available') ||
+        (target === 'none' && origState !== 'available');
+      if (matchesOrig) {
+        tapQueue.delete(ds);
+        upsertLocalCell(
+          existingQueued.origCell
+            ? Object.assign({}, existingQueued.origCell)
+            : { nsman_id: me.id, date: ds, state: 'none' },
+        );
+        return true;
+      }
+      existingQueued.target = target;
+    } else {
+      const existingCell = S.cells.find((c) => Number(c.nsman_id) === Number(me.id) && c.date === ds);
+      const origCell = existingCell ? Object.assign({}, existingCell) : null;
+      tapQueue.set(ds, { target, origCell });
+    }
+
+    if (target === 'available') {
+      upsertLocalCell({ nsman_id: me.id, date: ds, state: 'available', dept: me.dept, reason: '' });
+    } else {
+      upsertLocalCell({ nsman_id: me.id, date: ds, state: 'none' });
+    }
+    return true;
+  }
+  async function flushTapQueue() {
+    if (tapTimer) {
+      clearTimeout(tapTimer);
+      tapTimer = null;
+    }
+    if (tapQueue.size === 0) return;
+    const me = S.me;
+    if (!me) {
+      tapQueue.clear();
+      return;
+    }
+    const batch = new Map(tapQueue);
+    tapQueue.clear();
+
+    const toMark = [];
+    const toUnmark = [];
+    batch.forEach((entry, d) => {
+      if (entry.target === 'available') toMark.push(d);
+      else toUnmark.push(d);
+    });
+    toMark.sort();
+    toUnmark.sort();
+
+    const revertDate = (d) => {
+      if (tapQueue.has(d)) return;
+      const entry = batch.get(d);
+      upsertLocalCell(
+        entry && entry.origCell
+          ? Object.assign({}, entry.origCell)
+          : { nsman_id: me.id, date: d, state: 'none' },
+      );
+    };
+
+    S.inFlight++;
+    let markDone = [];
+    let markSkipped = [];
+    let unmarkDone = [];
+    let unmarkSkipped = [];
+    let firstError = null;
+
+    try {
+      const tasks = [];
+      if (toMark.length > 0) {
+        tasks.push(
+          api('POST', '/api/cells/available-batch', { dates: toMark })
+            .then((res) => {
+              markDone = Array.isArray(res.done) ? res.done : [];
+              markSkipped = Array.isArray(res.skipped) ? res.skipped : [];
+              const doneSet = new Set(markDone);
+              for (let i = 0; i < toMark.length; i++) {
+                const d = toMark[i];
+                if (doneSet.has(d)) {
+                  if (!tapQueue.has(d)) {
+                    upsertLocalCell({ nsman_id: me.id, date: d, state: 'available', dept: me.dept, reason: '' });
+                  }
+                } else {
+                  revertDate(d);
+                }
+              }
+            })
+            .catch((err) => {
+              if (!firstError) firstError = err;
+              for (let i = 0; i < toMark.length; i++) revertDate(toMark[i]);
+            }),
+        );
+      }
+      if (toUnmark.length > 0) {
+        tasks.push(
+          api('POST', '/api/cells/unavailable-batch', { dates: toUnmark })
+            .then((res) => {
+              unmarkDone = Array.isArray(res.done) ? res.done : [];
+              unmarkSkipped = Array.isArray(res.skipped) ? res.skipped : [];
+              const doneSet = new Set(unmarkDone);
+              for (let i = 0; i < toUnmark.length; i++) {
+                const d = toUnmark[i];
+                if (doneSet.has(d)) {
+                  if (!tapQueue.has(d)) {
+                    upsertLocalCell({ nsman_id: me.id, date: d, state: 'none' });
+                  }
+                } else {
+                  revertDate(d);
+                }
+              }
+            })
+            .catch((err) => {
+              if (!firstError) firstError = err;
+              for (let i = 0; i < toUnmark.length; i++) revertDate(toUnmark[i]);
+            }),
+        );
+      }
+      await Promise.all(tasks);
+
+      const summary = formatTapToast(markDone, markSkipped, unmarkDone, unmarkSkipped);
+      if (firstError && !summary) {
+        toast(firstError.message || 'Action refused.', true);
+      } else if (firstError && summary) {
+        toast(`${summary.msg}. ${firstError.message || 'Some changes failed.'}`, true);
+      } else if (summary) {
+        toast(summary.msg, summary.isError);
+      }
+      if (S.tab === 'mine' || !isOverlayOrTyping()) render();
+    } finally {
+      S.inFlight = Math.max(0, S.inFlight - 1);
+    }
   }
 
   function myTgId() {
@@ -454,18 +584,17 @@
   // ---- background refresh ----
 
   function isOverlayOrTyping() {
-    if (S.selecting) return true;
     if ($('overlay') && $('overlay').innerHTML) return true;
     const a = document.activeElement;
     return !!a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
   }
 
   function refresh() {
-    if (S.screen !== 'main' || S.inFlight > 0 || refreshing || document.hidden || isOverlayOrTyping()) return;
+    if (S.screen !== 'main' || S.inFlight > 0 || tapQueue.size > 0 || refreshing || document.hidden || isOverlayOrTyping()) return;
     refreshing = true;
     api('GET', '/api/init')
       .then((d) => {
-        if (S.inFlight === 0 && !isOverlayOrTyping()) applyInit(d, true);
+        if (S.inFlight === 0 && tapQueue.size === 0 && !isOverlayOrTyping()) applyInit(d, true);
       })
       .catch(() => { /* retry next cycle */ })
       .finally(() => { refreshing = false; });
@@ -476,7 +605,10 @@
     refreshTimer = setInterval(refresh, window.APP_REFRESH_MS || 60000);
   }
 
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) flushTapQueue();
+    else refresh();
+  });
   if (tg && tg.onEvent) {
     try { tg.onEvent('activated', refresh); } catch { /* older Telegram */ }
     try { tg.onEvent('themeChanged', applyTheme); } catch { /* older Telegram */ }
@@ -485,16 +617,6 @@
   // ---- domain actions (optimistic) ----
 
   const act = {
-    avail(date) {
-      const me = S.me;
-      if (!me) return;
-      optimistic(
-        () => upsertLocalCell({ nsman_id: me.id, date, state: 'available', dept: me.dept, reason: '' }),
-        () => api('POST', '/api/cells/available', { date }),
-        (res) => upsertLocalCell(res.cell),
-        `Marked available: ${nice(date)}`,
-      );
-    },
     unavail(date) {
       const me = S.me;
       if (!me) return;
@@ -504,94 +626,6 @@
         () => upsertLocalCell({ nsman_id: me.id, date, state: 'none' }),
         `Removed: ${nice(date)}`,
       );
-    },
-    async availBatch(dates) {
-      const me = S.me;
-      if (!me || !dates.length) return;
-      const snap = snapshot();
-      const prevSelected = new Set(S.selected);
-      const prevByDate = new Map();
-      for (let i = 0; i < dates.length; i++) {
-        const d = dates[i];
-        const existing = S.cells.find((c) => Number(c.nsman_id) === Number(me.id) && c.date === d);
-        prevByDate.set(d, existing ? Object.assign({}, existing) : null);
-      }
-      S.inFlight++;
-      try {
-        for (let i = 0; i < dates.length; i++) {
-          const d = dates[i];
-          upsertLocalCell({ nsman_id: me.id, date: d, state: 'available', dept: me.dept, reason: '' });
-          S.selected.delete(d);
-        }
-        S.removeConfirmSig = '';
-        render();
-        const res = await api('POST', '/api/cells/available-batch', { dates });
-        const done = Array.isArray(res.done) ? res.done : [];
-        const skipped = Array.isArray(res.skipped) ? res.skipped : [];
-        const doneSet = new Set(done);
-        for (let i = 0; i < dates.length; i++) {
-          const d = dates[i];
-          if (doneSet.has(d)) {
-            upsertLocalCell({ nsman_id: me.id, date: d, state: 'available', dept: me.dept, reason: '' });
-          } else {
-            const prev = prevByDate.get(d);
-            upsertLocalCell(prev || { nsman_id: me.id, date: d, state: 'none' });
-          }
-        }
-        toast(formatBatchToast('Marked', 'available', done, skipped), done.length === 0 && skipped.length > 0);
-        render();
-      } catch (err) {
-        restore(snap);
-        S.selected = prevSelected;
-        render();
-        toast(err.message || 'Action refused.', true);
-      } finally {
-        S.inFlight = Math.max(0, S.inFlight - 1);
-      }
-    },
-    async unavailBatch(dates) {
-      const me = S.me;
-      if (!me || !dates.length) return;
-      const snap = snapshot();
-      const prevSelected = new Set(S.selected);
-      const prevByDate = new Map();
-      for (let i = 0; i < dates.length; i++) {
-        const d = dates[i];
-        const existing = S.cells.find((c) => Number(c.nsman_id) === Number(me.id) && c.date === d);
-        prevByDate.set(d, existing ? Object.assign({}, existing) : null);
-      }
-      S.inFlight++;
-      try {
-        for (let i = 0; i < dates.length; i++) {
-          const d = dates[i];
-          upsertLocalCell({ nsman_id: me.id, date: d, state: 'none' });
-          S.selected.delete(d);
-        }
-        S.removeConfirmSig = '';
-        render();
-        const res = await api('POST', '/api/cells/unavailable-batch', { dates });
-        const done = Array.isArray(res.done) ? res.done : [];
-        const skipped = Array.isArray(res.skipped) ? res.skipped : [];
-        const doneSet = new Set(done);
-        for (let i = 0; i < dates.length; i++) {
-          const d = dates[i];
-          if (doneSet.has(d)) {
-            upsertLocalCell({ nsman_id: me.id, date: d, state: 'none' });
-          } else {
-            const prev = prevByDate.get(d);
-            upsertLocalCell(prev || { nsman_id: me.id, date: d, state: 'none' });
-          }
-        }
-        toast(formatBatchToast('Removed', '', done, skipped), done.length === 0 && skipped.length > 0);
-        render();
-      } catch (err) {
-        restore(snap);
-        S.selected = prevSelected;
-        render();
-        toast(err.message || 'Action refused.', true);
-      } finally {
-        S.inFlight = Math.max(0, S.inFlight - 1);
-      }
     },
     received(date) {
       const me = S.me;
@@ -830,21 +864,18 @@
     const tabs = $('tabs');
 
     if (S.screen === 'outside') {
-      hideSelBar();
       tabs.hidden = true;
       tabs.innerHTML = '';
       screen.innerHTML = `<p class="center">Open Enforcer NSMEN from the Telegram link.</p>`;
       return;
     }
     if (S.screen === 'fatal') {
-      hideSelBar();
       tabs.hidden = true;
       tabs.innerHTML = '';
       screen.innerHTML = `<p class="center">${esc(S.fatal)}</p>`;
       return;
     }
     if (S.screen === 'loading') {
-      hideSelBar();
       tabs.hidden = true;
       tabs.innerHTML = '';
       screen.innerHTML = `<p class="center note">Loading…</p>`;
@@ -856,7 +887,6 @@
     const isJoined = !!S.me;
 
     if (!isJoined && !isPlanner) {
-      hideSelBar();
       tabs.hidden = true;
       tabs.innerHTML = '';
       renderJoin();
@@ -864,16 +894,13 @@
     }
 
     if (S.tab === 'admin' && isAdmin) {
-      hideSelBar();
       renderAdmin();
     } else if (S.tab === 'planner' && isPlanner) {
-      hideSelBar();
       renderPlanner();
     } else if (isJoined) {
       renderMine();
     } else {
       // A planner or admin who is not an NSman never sees the joining screen.
-      hideSelBar();
       S.tab = 'planner';
       renderPlanner();
     }
@@ -892,7 +919,7 @@
       const btn = $(t.id);
       if (btn) {
         btn.onclick = () => {
-          if (t.key !== 'mine' && S.selecting) exitSelectMode();
+          if (t.key !== S.tab) flushTapQueue();
           S.tab = t.key;
           closeSheet();
           render();
@@ -1058,60 +1085,6 @@
     };
   }
 
-  function renderSelBar(p) {
-    const bar = ensureSelBar();
-    const app = $('app');
-    if (!S.selecting) {
-      hideSelBar();
-      return;
-    }
-    if (app) app.classList.add('selecting');
-    const allSelected = [...S.selected].sort();
-    const count = allSelected.length;
-    const markableDates = allSelected.filter(
-      (d) => !isPast(d) && (!S.maxDate || d <= S.maxDate) && isMarkableState(cellOf(p.id, d).state),
-    );
-    const removableDates = allSelected.filter(
-      (d) => !isPast(d) && isRemovableState(cellOf(p.id, d).state),
-    );
-    const plannedDates = removableDates.filter((d) => cellOf(p.id, d).state === 'planned');
-    const plannedSig = plannedDates.join(',');
-    const confirmingPlanned = plannedDates.length > 0 && S.removeConfirmSig === plannedSig;
-
-    bar.hidden = false;
-    bar.innerHTML = `
-      <div class="selbar-top">
-        <span class="selbar-cnt num" id="selCount">${count === 1 ? '1 day selected' : `${count} days selected`}</span>
-        <button class="btn sec small" id="selDoneBtn" type="button">Done</button>
-      </div>
-      ${confirmingPlanned
-        ? `<div class="warn selbar-warn" id="selPlanWarn">${plannedDates.length} of these ${plannedDates.length === 1 ? 'is' : 'are'} planned; your planner will be told. Tap Remove again to confirm.</div>`
-        : ''}
-      <div class="selbar-acts">
-        <button class="btn" id="selMarkBtn" type="button" ${markableDates.length ? '' : 'disabled'}>Mark available</button>
-        <button class="btn ${confirmingPlanned ? 'danger' : 'sec'}" id="selRemoveBtn" type="button" ${removableDates.length ? '' : 'disabled'}>Remove</button>
-      </div>`;
-
-    $('selDoneBtn').onclick = () => {
-      exitSelectMode();
-      render();
-    };
-    $('selMarkBtn').onclick = () => {
-      if (!markableDates.length) return;
-      act.availBatch(markableDates);
-    };
-    $('selRemoveBtn').onclick = () => {
-      if (!removableDates.length) return;
-      if (plannedDates.length > 0 && S.removeConfirmSig !== plannedSig) {
-        S.removeConfirmSig = plannedSig;
-        render();
-        return;
-      }
-      S.removeConfirmSig = '';
-      act.unavailBatch(removableDates);
-    };
-  }
-
   function renderMine() {
     const p = S.me;
     const [y, m] = S.nsMonth;
@@ -1130,30 +1103,35 @@
       const ds = iso(y, m, d);
       const c = cellOf(p.id, ds);
       const f = flightOf(p.dept, ds);
-      const selectable = isSelectableInBatch(ds, c.state);
-      const picked = S.selecting && selectable && S.selected.has(ds);
+      const past = isPast(ds);
+      const markable = !past && (!S.maxDate || ds <= S.maxDate) && isMarkableState(c.state);
+      const avail = !past && c.state === 'available';
+      const onPlan = !past && ON_PLAN.includes(c.state);
       const cls = [
         'day',
         sCls(c.state),
         f ? 'flight' : '',
-        isPast(ds) ? 'past' : '',
+        past ? 'past' : '',
         isToday(ds) ? 'today' : '',
-        S.selecting && !selectable ? 'unselectable' : '',
-        picked ? 'picked' : '',
       ]
         .filter(Boolean)
         .join(' ');
-      const lab = `${nice(ds)}: ${STATE_WORD[c.state]}${f ? ', ' + p.dept + ' flight' : ''}${
-        S.selecting ? (selectable ? (picked ? ', selected' : '') : ', not selectable') : ''
-      }`;
-      const selAttrs = S.selecting
-        ? selectable
-          ? ` aria-pressed="${picked ? 'true' : 'false'}"`
-          : ' disabled aria-disabled="true"'
-        : '';
-      grid += `<button class="${cls}" data-d="${ds}" aria-label="${esc(lab)}"${selAttrs}>${
-        picked ? tickIcon() : ''
-      }<span class="d num">${d}</span>${
+      const hint = past
+        ? ', past date'
+        : avail
+          ? ', tap to remove'
+          : markable
+            ? ', tap to mark available'
+            : onPlan
+              ? ', tap for details'
+              : '';
+      const lab = `${nice(ds)}: ${STATE_WORD[c.state]}${f ? ', ' + p.dept + ' flight' : ''}${hint}`;
+      const ariaAttrs = avail
+        ? ' aria-pressed="true"'
+        : markable
+          ? ' aria-pressed="false"'
+          : '';
+      grid += `<button class="${cls}" type="button" data-d="${ds}" aria-label="${esc(lab)}" title="${esc(lab)}"${ariaAttrs}><span class="d num">${d}</span>${
         tagOf(c.state) ? `<span class="tag">${tagOf(c.state)}</span>` : ''
       }</button>`;
     }
@@ -1172,21 +1150,27 @@
       .map((f) => f.date);
     const rows = fl.map((f) => {
       const c = cellOf(p.id, f.date);
-      const selectable = isSelectableInBatch(f.date, c.state);
-      const picked = S.selecting && selectable && S.selected.has(f.date);
-      const rowCls = [
-        'lrow',
-        S.selecting && !selectable ? 'unselectable' : '',
-        picked ? 'picked' : '',
-      ]
-        .filter(Boolean)
-        .join(' ');
-      const rowAttrs = S.selecting
-        ? selectable
-          ? ` aria-pressed="${picked ? 'true' : 'false'}"`
-          : ' disabled aria-disabled="true"'
-        : '';
-      return `<button class="${rowCls}" data-d="${f.date}"${rowAttrs}><span class="dt num">${nice(f.date).replace(/ \w+$/, '')}</span><span>${esc(f.type || 'Flight')}<span class="sub num">${esc(f.time || 'Time not set')}</span></span><span class="pill ${pillCls(c.state)}">${STATE_WORD[c.state]}</span></button>`;
+      const past = isPast(f.date);
+      const markable = !past && (!S.maxDate || f.date <= S.maxDate) && isMarkableState(c.state);
+      const avail = !past && c.state === 'available';
+      const onPlan = !past && ON_PLAN.includes(c.state);
+      const rowCls = ['lrow', past ? 'past' : ''].filter(Boolean).join(' ');
+      const hint = past
+        ? ', past date'
+        : avail
+          ? ', tap to remove'
+          : markable
+            ? ', tap to mark available'
+            : onPlan
+              ? ', tap for details'
+              : '';
+      const lab = `${nice(f.date)}: ${STATE_WORD[c.state]}, ${p.dept} flight${hint}`;
+      const ariaAttrs = avail
+        ? ' aria-pressed="true"'
+        : markable
+          ? ' aria-pressed="false"'
+          : '';
+      return `<button class="${rowCls}" type="button" data-d="${f.date}" aria-label="${esc(lab)}" title="${esc(lab)}"${ariaAttrs}><span class="dt num">${nice(f.date).replace(/ \w+$/, '')}</span><span>${esc(f.type || 'Flight')}<span class="sub num">${esc(f.time || 'Time not set')}</span></span><span class="pill ${pillCls(c.state)}">${STATE_WORD[c.state]}</span></button>`;
     }).join('');
 
     $('screen').innerHTML = `<div class="pad">
@@ -1200,18 +1184,15 @@
       <div class="monthbar">
         <h4>${MONTHS[m]} ${y}</h4>
         <div class="arrows">
-          <button class="btn sec selbtn" id="selModeBtn" type="button" aria-pressed="${S.selecting ? 'true' : 'false'}">Select days</button>
           <button class="icon" id="pm" aria-label="Previous month" ${monthOK(S.nsMonth, -1) ? '' : 'disabled'}>${chev(-1)}</button>
           <button class="icon" id="nm" aria-label="Next month" ${monthOK(S.nsMonth, 1) ? '' : 'disabled'}>${chev(1)}</button>
         </div>
       </div>
-      ${S.selecting ? `<div class="seltools"><button class="btn sec small" id="selFlightsBtn" type="button" ${markableFlights.length ? '' : 'disabled'}>All ${esc(p.dept)} flight days this month</button></div>` : ''}
-      <div class="cal${S.selecting ? ' selecting' : ''}" id="nscal">${grid}</div>
-      <p class="note" style="margin:8px 0 0">${
-        S.selecting
-          ? "Tap dates to tick or untick. Past dates and sent or received SAF100s can't be ticked."
-          : `Tap a date you're free to mark it. A bar under the date means ${esc(p.dept)} is flying.`
-      }</p>
+      <div class="caltools">
+        <button class="btn sec small" id="markFlightsBtn" type="button" ${markableFlights.length ? '' : 'disabled'}>Mark all ${esc(p.dept)} flight days</button>
+      </div>
+      <div class="cal" id="nscal">${grid}</div>
+      <p class="note" style="margin:8px 0 0">Tap the days you can fly. Tap again to undo. A bar under the date means ${esc(p.dept)} is flying.</p>
       <div class="list">
         <h4>${esc(p.dept)} flights in ${MONTHS[m]} <span class="num">${fl.length}</span></h4>
         ${rows || `<p class="note" style="margin:0">No ${esc(p.dept)} flights posted for ${MONTHS[m]} yet. You can still mark the days you're free.</p>`}
@@ -1221,49 +1202,56 @@
 
     wireCopy('copyAboutTg', 'aboutTg', myTgId());
 
-    $('selModeBtn').onclick = () => {
-      if (S.selecting) {
-        exitSelectMode();
-      } else {
-        closeSheet();
-        S.selecting = true;
-        S.selected.clear();
-        S.removeConfirmSig = '';
-      }
-      render();
-    };
-    const selFlBtn = $('selFlightsBtn');
-    if (selFlBtn) {
-      selFlBtn.onclick = () => {
+    const mfBtn = $('markFlightsBtn');
+    if (mfBtn) {
+      mfBtn.onclick = () => {
+        if (!markableFlights.length) return;
+        let changed = false;
         for (let i = 0; i < markableFlights.length; i++) {
-          S.selected.add(markableFlights[i]);
+          if (queueDayToggle(markableFlights[i], 'available')) changed = true;
         }
-        S.removeConfirmSig = '';
-        render();
+        if (changed) {
+          render();
+          flushTapQueue();
+        }
       };
     }
 
-    $('pm').onclick = () => { if (monthOK(S.nsMonth, -1)) { S.nsMonth = shiftMonth(S.nsMonth, -1); render(); } };
-    $('nm').onclick = () => { if (monthOK(S.nsMonth, 1)) { S.nsMonth = shiftMonth(S.nsMonth, 1); render(); } };
+    $('pm').onclick = () => {
+      if (monthOK(S.nsMonth, -1)) {
+        flushTapQueue();
+        S.nsMonth = shiftMonth(S.nsMonth, -1);
+        render();
+      }
+    };
+    $('nm').onclick = () => {
+      if (monthOK(S.nsMonth, 1)) {
+        flushTapQueue();
+        S.nsMonth = shiftMonth(S.nsMonth, 1);
+        render();
+      }
+    };
     const conf = $('conf');
     if (conf) conf.onclick = () => act.received(conf.dataset.d);
 
-    const toggleDate = (ds) => {
+    const onMineDateTap = (ds) => {
+      if (isPast(ds)) return;
       const st = cellOf(p.id, ds).state;
-      if (!isSelectableInBatch(ds, st)) return;
-      if (S.selected.has(ds)) S.selected.delete(ds);
-      else S.selected.add(ds);
-      S.removeConfirmSig = '';
-      render();
+      if (ON_PLAN.includes(st)) {
+        nsSheet(ds);
+        return;
+      }
+      if (queueDayToggle(ds)) {
+        scheduleTapFlush();
+        render();
+      }
     };
 
     $('screen').querySelectorAll('[data-d]').forEach((b) => {
       if (b.id !== 'conf') {
-        b.onclick = S.selecting ? () => toggleDate(b.dataset.d) : () => nsSheet(b.dataset.d);
+        b.onclick = () => onMineDateTap(b.dataset.d);
       }
     });
-
-    renderSelBar(p);
 
     // Swipe left/right to change month on NSman calendar
     const calEl = $('nscal');
@@ -1275,8 +1263,15 @@
       if (touchX == null || ev.changedTouches.length !== 1) return;
       const dx = ev.changedTouches[0].clientX - touchX;
       touchX = null;
-      if (dx < -48 && monthOK(S.nsMonth, 1)) { S.nsMonth = shiftMonth(S.nsMonth, 1); render(); }
-      else if (dx > 48 && monthOK(S.nsMonth, -1)) { S.nsMonth = shiftMonth(S.nsMonth, -1); render(); }
+      if (dx < -48 && monthOK(S.nsMonth, 1)) {
+        flushTapQueue();
+        S.nsMonth = shiftMonth(S.nsMonth, 1);
+        render();
+      } else if (dx > 48 && monthOK(S.nsMonth, -1)) {
+        flushTapQueue();
+        S.nsMonth = shiftMonth(S.nsMonth, -1);
+        render();
+      }
     }, { passive: true });
   }
 
@@ -1289,10 +1284,6 @@
 
     if (isPast(d)) {
       body = `<p class="sub">Past dates are locked.</p>`;
-    } else if (c.state === 'none') {
-      btns.push(['Mark available', 'primary', () => act.avail(d)]);
-    } else if (c.state === 'available') {
-      btns.push(['Remove', 'sec', () => act.unavail(d)]);
     } else if (c.state === 'planned') {
       body = `<div class="warn">Removing this date also takes you off the plan. Your planner is told.</div>`;
       btns.push(['Remove and come off the plan', 'sec', () => act.unavail(d)]);
@@ -1300,8 +1291,6 @@
       if (c.state === 'sent') btns.push(["I've received my SAF100", 'primary', () => act.received(d)]);
       if (beforeDay(d)) btns.push(['Cancel SAF100', 'danger', () => { cancelSheet(d); return false; }]);
       else body = `<p class="sub">SAF100 can be cancelled up to the day before.</p>`;
-    } else {
-      btns.push(['Mark available again', 'sec', () => act.avail(d)]);
     }
 
     openSheet(

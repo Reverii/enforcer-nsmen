@@ -239,24 +239,14 @@ button { -webkit-appearance: none; appearance: none; }
 .monthbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0 8px; }
 .monthbar h4 { margin: 0; font-size: 16px; font-weight: 500; min-width: 0; }
 .arrows { display: flex; align-items: center; gap: 4px; flex: none; }
-.selbtn {
-  height: 36px;
-  padding: 0 10px;
-  font-size: 13px;
-  margin-right: 2px;
-}
-.selbtn[aria-pressed="true"] {
-  background: var(--primary);
-  color: var(--on-primary);
-}
-.seltools {
+.caltools {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   margin: 0 0 8px;
 }
-.seltools .btn {
+.caltools .btn {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -319,94 +309,6 @@ button { -webkit-appearance: none; appearance: none; }
   color: var(--muted);
 }
 
-/* Select days mode */
-.cal.selecting .day.s-none:not(.unselectable):not(.picked) {
-  box-shadow: inset 0 0 0 1px var(--border);
-}
-.cal.selecting .day.unselectable {
-  opacity: 0.36;
-  cursor: not-allowed;
-}
-.cal.selecting .day.picked {
-  box-shadow: inset 0 0 0 2px var(--primary);
-}
-.cal.selecting .day.s-none.picked {
-  background: var(--raised);
-}
-.cal.selecting .day.s-available.picked {
-  background: var(--active);
-}
-.day .tick {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  background: var(--primary);
-  color: var(--on-primary);
-  display: grid;
-  place-items: center;
-  pointer-events: none;
-}
-.day .tick svg {
-  width: 10px;
-  height: 10px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 2.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.lrow.unselectable {
-  opacity: 0.48;
-  cursor: not-allowed;
-}
-.lrow.picked {
-  background: var(--raised);
-  border-radius: var(--radius-control);
-  padding-left: 8px;
-  padding-right: 8px;
-}
-
-.selbar {
-  position: sticky;
-  bottom: calc(56px + env(safe-area-inset-bottom, 0px));
-  z-index: 11;
-  flex: none;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  padding: 10px 16px 12px;
-  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.06);
-}
-.selbar[hidden] { display: none; }
-.selbar-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.selbar-cnt {
-  font-weight: 500;
-  font-size: 14px;
-}
-.selbar-warn {
-  margin-bottom: 8px;
-}
-.selbar-acts {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-.selbar-acts .btn {
-  height: 40px;
-  padding: 0 10px;
-}
-.app.selecting .toast {
-  bottom: calc(176px + env(safe-area-inset-bottom, 0px));
-}
-
 .list { margin-top: 18px; }
 .list h4 { font-size: 14px; font-weight: 500; margin: 0 0 6px; display: flex; justify-content: space-between; }
 .list h4 span { color: var(--muted); font-weight: 400; }
@@ -426,6 +328,7 @@ button { -webkit-appearance: none; appearance: none; }
   cursor: pointer;
   padding: 6px 0;
 }
+.lrow.past { color: var(--faint); cursor: default; }
 .lrow:last-child { border-bottom: 0; }
 .lrow .dt { font-weight: 500; }
 .lrow .sub { color: var(--muted); font-size: 12px; line-height: 16px; display: block; }

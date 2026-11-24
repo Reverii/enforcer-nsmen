@@ -54,6 +54,7 @@
       { id: 5, nsman_id: 2, date: '2026-12-09', state: 'planned', dept: 'Loadmaster', planned_by: 'ME2 ALPHA', sent_at: '', received_at: '', ended_at: '', ended_by: '', reason: '' },
     ],
     failNext: o.failNext || null,
+    skipDates: {},
   };
 
   if (o.bravoAtCap) {
@@ -219,6 +220,11 @@
         }
         if (d < TODAY) {
           skipped.push({ date: d, reason: 'past date' });
+          continue;
+        }
+        if (state.skipDates && state.skipDates[d]) {
+          skipped.push({ date: d, reason: state.skipDates[d] });
+          delete state.skipDates[d];
           continue;
         }
         const existing = state.cells.find((c) => c.nsman_id === m.id && c.date === d);

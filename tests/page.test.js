@@ -217,8 +217,9 @@ test('NSman marks available, confirms SAF100 received, and cancels SAF100 with r
   await page.getByRole('button', { name: 'Next month' }).click();
   await page.getByText('December 2026').waitFor();
   await page.locator('#nscal [data-d="2026-12-18"]').click();
-  await page.getByRole('button', { name: 'Mark available' }).click();
+  assert.equal(await page.locator('.sheet').count(), 0);
   await page.locator('#nscal [data-d="2026-12-18"].s-available').waitFor();
+  await page.getByText('Saved 1 day').waitFor();
 
   await page.locator('#nscal [data-d="2026-12-09"]').click();
   await page.getByRole('button', { name: 'Cancel SAF100' }).click();
@@ -236,7 +237,7 @@ test('optimistic update reverts with error toast when server refuses', async () 
   await page.getByRole('button', { name: 'Next month' }).click();
   await page.evaluate(() => { window.FAKE.state.failNext = 'Server refused test'; });
   await page.locator('#nscal [data-d="2026-12-20"]').click();
-  await page.getByRole('button', { name: 'Mark available' }).click();
+  await page.locator('#nscal [data-d="2026-12-20"].s-available').waitFor();
   await page.getByRole('alert', { name: '' }).or(page.locator('.toast.err')).waitFor();
   assert.match(await page.locator('.toast.err').innerText(), /Server refused test/);
   const hasAvail = await page.locator('#nscal [data-d="2026-12-20"].s-available').count();
@@ -327,9 +328,9 @@ test('Highest Admin sees "Your rank and name" on Admin tab and saving updates th
   await page.close();
 });
 
-test('Select days mode: tick 3 dates, Mark available, flight-days shortcut, cross-month, planned confirm, Done restores single tap', async () => {
+test('Tap-to-mark: 4 taps batch after debounce, toggle undo, tap-untap sends nothing, flight rows, sent/planned sheet, past no-op, flight shortcut, server skip revert, flush triggers', async () => {
   const page = await open({
-    plannerDepts: [],
+    plannerDepts: ['Loadmaster'],
     extraFlights: [
       { dept: 'Loadmaster', date: '2026-11-20', type: 'C-130', time: '0800-1500' }, // past flight
       { dept: 'Loadmaster', date: '2026-12-11', type: 'C-130', time: '0800-1500' }, // planned flight
@@ -344,76 +345,115 @@ test('Select days mode: tick 3 dates, Mark available, flight-days shortcut, cros
   });
   await page.getByRole('heading', { name: 'My days' }).waitFor();
 
-  // Go to December 2026 and enter Select days mode
+  // Select days mode is completely gone; helper line updated
+  assert.equal(await page.locator('#selModeBtn').count(), 0);
+  assert.equal(await page.locator('#selbar').count(), 0);
+  await page.getByText('Tap the days you can fly. Tap again to undo. A bar under the date means Loadmaster is flying.').waitFor();
+
+  // Go to December 2026
   await page.getByRole('button', { name: 'Next month' }).click();
   await page.getByText('December 2026').waitFor();
-  await page.getByRole('button', { name: 'Select days' }).click();
-  await page.locator('#selbar').waitFor({ state: 'visible' });
-  assert.equal(await page.locator('#selCount').innerText(), '0 days selected');
-  assert.equal(await page.locator('#selMarkBtn').isDisabled(), true);
-  assert.equal(await page.locator('#selRemoveBtn').isDisabled(), true);
 
-  // Sent and received dates are not selectable
-  assert.equal(await page.locator('#nscal [data-d="2026-12-09"]').isDisabled(), true);
-  assert.equal(await page.locator('#nscal [data-d="2026-12-08"]').isDisabled(), true);
+  // Check aria-label and aria-pressed on day buttons
+  const dec16 = page.locator('#nscal [data-d="2026-12-16"]');
+  assert.match(await dec16.getAttribute('aria-label'), /Wed 16 Dec: Not marked.*tap to mark available/);
+  assert.equal(await dec16.getAttribute('aria-pressed'), 'false');
+  const dec15 = page.locator('#nscal [data-d="2026-12-15"]');
+  assert.match(await dec15.getAttribute('aria-label'), /Tue 15 Dec: Available.*tap to remove/);
+  assert.equal(await dec15.getAttribute('aria-pressed'), 'true');
 
-  // Tick 3 dates; no bottom sheet opens; Mark available updates calendar and toast
+  // Tap 4 free dates in a row: marks all 4 immediately, no sheet opens, sends ONE batch call after debounce
   await page.locator('#nscal [data-d="2026-12-16"]').click();
   await page.locator('#nscal [data-d="2026-12-17"]').click();
   await page.locator('#nscal [data-d="2026-12-19"]').click();
+  await page.locator('#nscal [data-d="2026-12-20"]').click();
   assert.equal(await page.locator('.sheet').count(), 0);
-  assert.equal(await page.locator('#selCount').innerText(), '3 days selected');
-  assert.equal(await page.locator('#selMarkBtn').isDisabled(), false);
-  assert.equal(await page.locator('#selRemoveBtn').isDisabled(), true);
+  assert.equal(await page.locator('#nscal [data-d="2026-12-16"].s-available').count(), 1);
+  assert.equal(await page.locator('#nscal [data-d="2026-12-17"].s-available').count(), 1);
+  assert.equal(await page.locator('#nscal [data-d="2026-12-19"].s-available').count(), 1);
+  assert.equal(await page.locator('#nscal [data-d="2026-12-20"].s-available').count(), 1);
+  assert.equal(await page.locator('#nscal [data-d="2026-12-16"]').getAttribute('aria-pressed'), 'true');
+  assert.match(await page.locator('#nscal [data-d="2026-12-16"]').getAttribute('aria-label'), /tap to remove/);
 
-  await page.locator('#selMarkBtn').click();
-  await page.getByText('Marked 3 days available').waitFor();
-  await page.locator('#nscal [data-d="2026-12-16"].s-available').waitFor();
-  await page.locator('#nscal [data-d="2026-12-17"].s-available').waitFor();
-  await page.locator('#nscal [data-d="2026-12-19"].s-available').waitFor();
-  assert.equal(await page.locator('#selCount').innerText(), '0 days selected');
+  // Before debounce fires, no batch call sent yet
+  const batchBefore = await page.evaluate(() =>
+    window.FAKE.calls.filter((c) => c.path === '/api/cells/available-batch').length,
+  );
+  assert.equal(batchBefore, 0);
 
-  // Flight-days shortcut ticks ONLY future markable Loadmaster flight days (Dec 18 & 22; skips Dec 9 sent, Dec 11 planned, Dec 15 available, Dec 10 Pilot)
-  await page.getByRole('button', { name: 'All Loadmaster flight days this month' }).click();
-  const tickedDec = await page.locator('#nscal .day.picked').evaluateAll((els) => els.map((e) => e.dataset.d));
-  assert.deepEqual(tickedDec, ['2026-12-18', '2026-12-22']);
-  assert.equal(await page.locator('#selCount').innerText(), '2 days selected');
+  // After ~800ms debounce, ONE batch call with all 4 dates and quiet toast
+  await page.getByText('Saved 4 days').waitFor();
+  const availCalls = await page.evaluate(() =>
+    window.FAKE.calls.filter((c) => c.path === '/api/cells/available-batch'),
+  );
+  assert.equal(availCalls.length, 1);
+  assert.deepEqual(availCalls[0].body.dates, ['2026-12-16', '2026-12-17', '2026-12-19', '2026-12-20']);
 
-  // Changing month keeps ticks on December; past dates in November are disabled; bar counts all ticks
-  await page.getByRole('button', { name: 'Previous month' }).click();
-  await page.getByText('November 2026').waitFor();
-  assert.equal(await page.locator('#nscal [data-d="2026-11-20"]').isDisabled(), true);
-  assert.equal(await page.locator('#selFlightsBtn').isDisabled(), true);
-  await page.locator('#nscal [data-d="2026-11-28"]').click();
-  assert.equal(await page.locator('#selCount').innerText(), '3 days selected');
+  // Tapping a marked day again un-marks it
+  await page.locator('#nscal [data-d="2026-12-16"]').click();
+  assert.equal(await page.locator('.sheet').count(), 0);
+  assert.equal(await page.locator('#nscal [data-d="2026-12-16"].s-none').count(), 1);
+  assert.equal(await page.locator('#nscal [data-d="2026-12-16"]').getAttribute('aria-pressed'), 'false');
+  await page.getByText('Saved 1 day').waitFor();
+  const unavailCalls = await page.evaluate(() =>
+    window.FAKE.calls.filter((c) => c.path === '/api/cells/unavailable-batch'),
+  );
+  assert.equal(unavailCalls.length, 1);
+  assert.deepEqual(unavailCalls[0].body.dates, ['2026-12-16']);
 
-  // Mark all 3 across months
-  await page.locator('#selMarkBtn').click();
-  await page.getByText('Marked 3 days available').waitFor();
-  await page.locator('#nscal [data-d="2026-11-28"].s-available').waitFor();
+  // Tap-untap of the same date before debounce sends nothing for it
+  const callsBeforeTapUntap = await page.evaluate(() => window.FAKE.calls.length);
+  await page.locator('#nscal [data-d="2026-12-21"]').click();
+  assert.equal(await page.locator('#nscal [data-d="2026-12-21"].s-available').count(), 1);
+  await page.locator('#nscal [data-d="2026-12-21"]').click();
+  assert.equal(await page.locator('#nscal [data-d="2026-12-21"].s-none').count(), 1);
+  await page.waitForTimeout(1000);
+  const callsAfterTapUntap = await page.evaluate(() => window.FAKE.calls.length);
+  assert.equal(callsAfterTapUntap, callsBeforeTapUntap, 'tap-untap before debounce sends nothing');
 
-  // Back to December: verify Dec 18 & 22 are available; test planned removal double-confirm in bar
-  await page.getByRole('button', { name: 'Next month' }).click();
-  await page.locator('#nscal [data-d="2026-12-18"].s-available').waitFor();
-  await page.locator('#nscal [data-d="2026-12-22"].s-available').waitFor();
+  // Flight list rows under the calendar: free flight row toggles without sheet; sent row opens sheet
+  const flightRow18 = page.locator('.list .lrow[data-d="2026-12-18"]');
+  await flightRow18.click();
+  assert.equal(await page.locator('.sheet').count(), 0);
+  assert.equal(await page.locator('#nscal [data-d="2026-12-18"].s-available').count(), 1);
+  // Untap via row before debounce to keep Dec 18 free for shortcut test below
+  await flightRow18.click();
+  assert.equal(await page.locator('#nscal [data-d="2026-12-18"].s-none').count(), 1);
+
+  const flightRow09 = page.locator('.list .lrow[data-d="2026-12-09"]');
+  await flightRow09.click();
+  await page.locator('.sheet').waitFor({ state: 'visible' });
+  await page.locator('.sheet').getByText('C-130 · 0800-1500').waitFor();
+  await page.locator('.sheet').getByRole('button', { name: "I've received my SAF100" }).waitFor();
+  await page.locator('.sheet').getByRole('button', { name: 'Cancel SAF100' }).waitFor();
+  await page.locator('.sheet #close').click();
+
+  // Sent day and planned day on calendar still open their sheet
+  await page.locator('#nscal [data-d="2026-12-09"]').click();
+  await page.locator('.sheet').waitFor({ state: 'visible' });
+  await page.locator('.sheet').getByRole('button', { name: "I've received my SAF100" }).waitFor();
+  await page.locator('.sheet #close').click();
 
   await page.locator('#nscal [data-d="2026-12-11"]').click();
-  await page.locator('#nscal [data-d="2026-12-12"]').click();
-  assert.equal(await page.locator('#selMarkBtn').isDisabled(), true, 'planned dates cannot be marked available');
-  assert.equal(await page.locator('#selRemoveBtn').isDisabled(), false);
+  await page.locator('.sheet').waitFor({ state: 'visible' });
+  await page.locator('.sheet').getByText('C-130 · 0800-1500').waitFor();
+  await page.locator('.sheet').getByRole('button', { name: 'Remove and come off the plan' }).waitFor();
+  await page.locator('.sheet #close').click();
 
-  await page.locator('#selRemoveBtn').click();
-  await page.getByText('2 of these are planned; your planner will be told. Tap Remove again to confirm.').waitFor();
-  assert.equal(await page.locator('#nscal [data-d="2026-12-11"].s-planned').count(), 1);
+  // Flight-days shortcut marks ONLY future markable Loadmaster flight days (Dec 18 & 22) in one batch, then disables
+  const shortcutBtn = page.getByRole('button', { name: 'Mark all Loadmaster flight days' });
+  assert.equal(await shortcutBtn.isDisabled(), false);
+  await shortcutBtn.click();
+  await page.getByText('Saved 2 days').waitFor();
+  await page.locator('#nscal [data-d="2026-12-18"].s-available').waitFor();
+  await page.locator('#nscal [data-d="2026-12-22"].s-available').waitFor();
+  assert.equal(await shortcutBtn.isDisabled(), true);
+  const lastAvailCall = await page.evaluate(() =>
+    window.FAKE.calls.filter((c) => c.path === '/api/cells/available-batch').at(-1),
+  );
+  assert.deepEqual(lastAvailCall.body.dates, ['2026-12-18', '2026-12-22']);
 
-  await page.locator('#selRemoveBtn').click();
-  await page.getByText('Removed 2 days').waitFor();
-  await page.locator('#nscal [data-d="2026-12-11"].s-none').waitFor();
-  await page.locator('#nscal [data-d="2026-12-12"].s-none').waitFor();
-
-  // Skipped reconciliation toast & revert
-  await page.locator('#nscal [data-d="2026-12-23"]').click();
-  await page.locator('#nscal [data-d="2026-12-24"]').click();
+  // Server skip reverts just the skipped date and shows error toast (partial + pure refusal)
   await page.evaluate(() => {
     window.FAKE.state.cells.push({
       id: 999,
@@ -429,23 +469,62 @@ test('Select days mode: tick 3 dates, Mark available, flight-days shortcut, cros
       reason: '',
     });
   });
-  await page.locator('#selMarkBtn').click();
-  await page.getByText('Marked 1 day; 1 skipped (SAF100 already sent)').waitFor();
+  await page.locator('#nscal [data-d="2026-12-23"]').click();
+  await page.locator('#nscal [data-d="2026-12-24"]').click();
+  await page.getByText("Saved 1 day. Couldn't mark 1 day (SAF100 already sent)").waitFor();
   await page.locator('#nscal [data-d="2026-12-23"].s-available').waitFor();
   assert.equal(await page.locator('#nscal [data-d="2026-12-24"].s-available').count(), 0);
 
-  // Done leaves select mode and single tap opens the bottom sheet again
-  await page.locator('#selDoneBtn').click();
-  await page.locator('#selbar').waitFor({ state: 'hidden' });
-  await page.locator('#nscal [data-d="2026-12-20"]').click();
-  await page.locator('.sheet').waitFor({ state: 'visible' });
-  await page.getByRole('heading', { name: 'Sun 20 Dec' }).waitFor();
+  await page.evaluate(() => { window.FAKE.state.skipDates['2026-12-25'] = 'past date'; });
+  await page.locator('#nscal [data-d="2026-12-25"]').click();
+  await page.getByText("Couldn't mark 1 day (past date)").waitFor();
+  assert.equal(await page.locator('#nscal [data-d="2026-12-25"].s-available').count(), 0);
+
+  // Flush before switching months
+  await page.locator('#nscal [data-d="2026-12-26"]').click();
+  await page.getByRole('button', { name: 'Previous month' }).click();
+  await page.getByText('November 2026').waitFor();
+  const flushedMonthCall = await page.evaluate(() =>
+    window.FAKE.calls.filter((c) => c.path === '/api/cells/available-batch').at(-1),
+  );
+  assert.deepEqual(flushedMonthCall.body.dates, ['2026-12-26']);
+
+  // Past day in November does nothing (no sheet, no state change, no API call); shortcut disabled when no future flights
+  assert.equal(await page.locator('#markFlightsBtn').isDisabled(), true);
+  const callsBeforePast = await page.evaluate(() => window.FAKE.calls.length);
+  await page.locator('#nscal [data-d="2026-11-20"]').click();
+  assert.equal(await page.locator('.sheet').count(), 0);
+  assert.equal(await page.locator('#nscal [data-d="2026-11-20"].s-available').count(), 0);
+  assert.equal(await page.evaluate(() => window.FAKE.calls.length), callsBeforePast);
+
+  // Flush on visibilitychange to hidden
+  await page.locator('#nscal [data-d="2026-11-28"]').click();
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  const flushedVisCall = await page.evaluate(() =>
+    window.FAKE.calls.filter((c) => c.path === '/api/cells/available-batch').at(-1),
+  );
+  assert.deepEqual(flushedVisCall.body.dates, ['2026-11-28']);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+  });
+
+  // Flush before switching tabs
+  await page.locator('#nscal [data-d="2026-11-29"]').click();
+  await page.locator('#tabPlanner').click();
+  await page.getByRole('heading', { name: 'Planner' }).waitFor();
+  const flushedTabCall = await page.evaluate(() =>
+    window.FAKE.calls.filter((c) => c.path === '/api/cells/available-batch').at(-1),
+  );
+  assert.deepEqual(flushedTabCall.body.dates, ['2026-11-29']);
 
   assert.deepEqual(page.errors, []);
   await page.close();
 });
 
-test('Select days mode fits 360px viewport and saves light/dark screenshots', async () => {
+test('Tap-to-mark fits 360px viewport and saves light/dark screenshots after marking 4 days', async () => {
   const screensDir = path.join(ROOT, 'tests', 'screens');
   fs.mkdirSync(screensDir, { recursive: true });
 
@@ -467,22 +546,21 @@ test('Select days mode fits 360px viewport and saves light/dark screenshots', as
     await page.getByRole('heading', { name: 'My days' }).waitFor();
     await page.getByRole('button', { name: 'Next month' }).click();
     await page.getByText('December 2026').waitFor();
-    await page.getByRole('button', { name: 'Select days' }).click();
+    await page.locator('#nscal [data-d="2026-12-16"]').click();
     await page.locator('#nscal [data-d="2026-12-18"]').click();
+    await page.locator('#nscal [data-d="2026-12-19"]').click();
     await page.locator('#nscal [data-d="2026-12-22"]').click();
-    await page.locator('#nscal [data-d="2026-12-11"]').click();
-    await page.locator('#selbar').waitFor({ state: 'visible' });
-    await page.screenshot({ path: path.join(screensDir, `select-${theme}.png`) });
+    await page.getByText('Saved 4 days').waitFor();
+    await page.screenshot({ path: path.join(screensDir, `tap-${theme}.png`) });
     assert.deepEqual(page.errors, []);
     await page.close();
   }
 
-  // 360px phone viewport overflow check in select mode
+  // 360px phone viewport overflow check on My days
   const narrow = await open({ ...shotOpts, width: 360 });
   await narrow.getByRole('heading', { name: 'My days' }).waitFor();
   await narrow.getByRole('button', { name: 'Next month' }).click();
-  await narrow.getByRole('button', { name: 'Select days' }).click();
-  await narrow.locator('#selbar').waitFor({ state: 'visible' });
+  await narrow.getByText('December 2026').waitFor();
   assert.ok(await narrow.evaluate(() => document.documentElement.scrollWidth <= 360));
   await narrow.close();
 });
