@@ -27,6 +27,11 @@
     cancelled: 'Cancelled',
     withdrawn: 'Withdrawn',
   };
+  // On My days, a flight day the NSman has tapped reads "Select" (they're picking that flight);
+  // any other tapped day reads "Free".
+  function mineWord(state, isFlight, words) {
+    return isFlight && state === 'available' ? 'Select' : words[state];
+  }
   const GRID_WORD = {
     available: 'Free',
     planned: 'Plan',
@@ -1142,13 +1147,13 @@
             : onPlan
               ? ', tap for details'
               : '';
-      const lab = `${nice(ds)}: ${STATE_WORD[c.state]}${f ? ', ' + p.dept + ' flight' : ''}${hint}`;
+      const lab = `${nice(ds)}: ${mineWord(c.state, !!f, STATE_WORD)}${f ? ', ' + p.dept + ' flight' : ''}${hint}`;
       const ariaAttrs = avail
         ? ' aria-pressed="true"'
         : markable
           ? ' aria-pressed="false"'
           : '';
-      const calWord = CAL_WORD[c.state] || '';
+      const calWord = mineWord(c.state, !!f, CAL_WORD) || '';
       grid += `<button class="${cls}" type="button" data-d="${ds}" aria-label="${esc(lab)}" title="${esc(lab)}"${ariaAttrs}>${
         f ? PLANE_SVG : ''
       }<span class="d num">${d}</span>${
@@ -1184,13 +1189,13 @@
             : onPlan
               ? ', tap for details'
               : '';
-      const lab = `${nice(f.date)}: ${STATE_WORD[c.state]}, ${p.dept} flight${hint}`;
+      const lab = `${nice(f.date)}: ${mineWord(c.state, true, STATE_WORD)}, ${p.dept} flight${hint}`;
       const ariaAttrs = avail
         ? ' aria-pressed="true"'
         : markable
           ? ' aria-pressed="false"'
           : '';
-      return `<button class="${rowCls}" type="button" data-d="${f.date}" aria-label="${esc(lab)}" title="${esc(lab)}"${ariaAttrs}><span class="dt num">${nice(f.date).replace(/ \w+$/, '')}</span><span>${esc(f.type || 'Flight')}<span class="sub num">${esc(f.time || 'Time not set')}</span></span><span class="pill ${pillCls(c.state)}">${STATE_WORD[c.state]}</span></button>`;
+      return `<button class="${rowCls}" type="button" data-d="${f.date}" aria-label="${esc(lab)}" title="${esc(lab)}"${ariaAttrs}><span class="dt num">${nice(f.date).replace(/ \w+$/, '')}</span><span>${esc(f.type || 'Flight')}<span class="sub num">${esc(f.time || 'Time not set')}</span></span><span class="pill ${pillCls(c.state)}">${mineWord(c.state, true, STATE_WORD)}</span></button>`;
     }).join('');
 
     $('screen').innerHTML = `<div class="pad">

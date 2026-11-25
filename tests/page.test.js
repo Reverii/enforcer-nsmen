@@ -381,7 +381,7 @@ test('Tap-to-mark: 4 taps batch after debounce, toggle undo, tap-untap sends not
   assert.match(await dec16.getAttribute('aria-label'), /Wed 16 Dec: Not marked.*tap to mark available/);
   assert.equal(await dec16.getAttribute('aria-pressed'), 'false');
   const dec15 = page.locator('#nscal [data-d="2026-12-15"]');
-  assert.match(await dec15.getAttribute('aria-label'), /Tue 15 Dec: Free.*tap to remove/);
+  assert.match(await dec15.getAttribute('aria-label'), /Tue 15 Dec: Select, Loadmaster flight.*tap to remove/);
   assert.equal(await dec15.getAttribute('aria-pressed'), 'true');
 
   // Tap 4 free dates in a row: marks all 4 immediately, no sheet opens, sends ONE batch call after debounce
@@ -395,7 +395,10 @@ test('Tap-to-mark: 4 taps batch after debounce, toggle undo, tap-untap sends not
   assert.equal(await page.locator('#nscal [data-d="2026-12-19"].s-available').count(), 1);
   assert.equal(await page.locator('#nscal [data-d="2026-12-20"].s-available').count(), 1);
   assert.equal(await page.locator('#nscal [data-d="2026-12-16"]').getAttribute('aria-pressed'), 'true');
-  assert.match(await page.locator('#nscal [data-d="2026-12-16"]').getAttribute('aria-label'), /tap to remove/);
+  assert.match(await page.locator('#nscal [data-d="2026-12-16"]').getAttribute('aria-label'), /Wed 16 Dec: Free.*tap to remove/);
+  // A tapped day with no flight posted says Free; a tapped flight day says Select
+  assert.equal(await page.locator('#nscal [data-d="2026-12-16"] .w').innerText(), 'Free');
+  assert.equal(await page.locator('#nscal [data-d="2026-12-15"] .w').innerText(), 'Select');
 
   // Before debounce fires, no batch call sent yet
   const batchBefore = await page.evaluate(() =>
@@ -643,7 +646,7 @@ test('Day markers: every state renders its word in calendar, flight rows, sheets
 
   const expectedCal = [
     ['2026-12-03', 's-none', '', null],
-    ['2026-12-15', 's-available', 'Free', 'rgb(226, 243, 236)'],
+    ['2026-12-15', 's-available', 'Select', 'rgb(226, 243, 236)'],
     ['2026-12-11', 's-planned', 'Planned', 'rgb(253, 240, 211)'],
     ['2026-12-09', 's-sent', 'Sent', 'rgb(29, 95, 191)'],
     ['2026-12-12', 's-received', 'Got it', 'rgb(29, 95, 191)'],
@@ -683,7 +686,7 @@ test('Day markers: every state renders its word in calendar, flight rows, sheets
     ['2026-12-09', 'p-sent', 'SAF100 sent'],
     ['2026-12-11', 'p-planned', 'Planned'],
     ['2026-12-12', 'p-received', 'SAF100 received'],
-    ['2026-12-15', 'p-available', 'Free'],
+    ['2026-12-15', 'p-available', 'Select'],
     ['2026-12-19', 'p-cancelled', 'Cancelled'],
     ['2026-12-22', 'p-withdrawn', 'Withdrawn'],
   ];
