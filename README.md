@@ -22,6 +22,10 @@ Highest Admin.
   the date and are listed below the calendar with their flight type and time (tapping a free flight row
   toggles it too). Planned, sent, and received dates open a details sheet to confirm receipt, come off the
   plan, or cancel an SAF100.
+- **Broadcasting a month's flights (planners and Highest Admin):** after posting a month's flight days,
+  tap **Planner > Flights > Broadcast `<Month>` flights**. The bot messages every NSman in that
+  department with the month's upcoming flight days (date, type and time). Sending again is allowed; the
+  app shows when it was last sent and by whom first.
 - **Planning (planners and Highest Admin):** open the **Planner** tab. Tap any date header in the grid
   to see everyone who is free (sorted by fewest SAF100 days used first) and plan several people at once,
   or post/edit that day's flight details.

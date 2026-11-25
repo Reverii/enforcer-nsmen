@@ -104,6 +104,42 @@ export async function getPlannerDepts(db, tgId) {
   return rows.map((r) => r.dept);
 }
 
+export async function getActiveNsmenInDept(db, dept) {
+  const res = await db
+    .prepare('SELECT id, name, dept, tg_id FROM nsmen WHERE active = 1 AND dept = ? ORDER BY name')
+    .bind(dept)
+    .all();
+  return res.results || [];
+}
+
+export async function getFlightDaysInMonth(db, dept, month) {
+  const res = await db
+    .prepare('SELECT id, dept, date, type, time FROM flight_days WHERE dept = ? AND date LIKE ? ORDER BY date')
+    .bind(dept, `${month}-%`)
+    .all();
+  return res.results || [];
+}
+
+// Latest flight broadcast per department and month, read from the log
+// (detail is written as "<Dept> <YYYY-MM> to <n> NSmen").
+export async function getLatestBroadcasts(db, depts) {
+  if (!depts || !depts.length) return [];
+  const res = await db
+    .prepare("SELECT at, actor, detail FROM log WHERE action = 'broadcast_flights' ORDER BY id DESC LIMIT 500")
+    .all();
+  const seen = new Set();
+  const out = [];
+  for (const row of res.results || []) {
+    const m = /^(\S+) (\d{4}-\d{2})\b/.exec(row.detail || '');
+    if (!m || !depts.includes(m[1])) continue;
+    const key = `${m[1]} ${m[2]}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ dept: m[1], month: m[2], at: row.at, actor: row.actor });
+  }
+  return out;
+}
+
 export async function getDeptPlanners(db, dept) {
   const res = await db
     .prepare(
@@ -220,6 +256,7 @@ export async function loadInitData(db, tgId, adminRow = undefined) {
   let flightDays = [];
   let cells = [];
   let planners = [];
+  let broadcasts = [];
 
   if (plannerDepts.length > 0) {
     const phPlan = plannerDepts.map(() => '?').join(', ');
@@ -248,6 +285,7 @@ export async function loadInitData(db, tgId, adminRow = undefined) {
     nsmen = nsmenRes.results || [];
     flightDays = flightsRes.results || [];
     planners = plannersList;
+    broadcasts = await getLatestBroadcasts(db, plannerDepts);
 
     const nsmanIds = new Set(nsmen.map((n) => n.id));
     if (me) nsmanIds.add(me.id);
@@ -292,6 +330,7 @@ export async function loadInitData(db, tgId, adminRow = undefined) {
     flightDays,
     cells,
     planners,
+    broadcasts,
   };
 }
 

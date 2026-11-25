@@ -18,7 +18,9 @@ import {
   getCellsInRange,
   getDeptPlanners,
   getExportData,
+  getActiveNsmenInDept,
   getFlightDay,
+  getFlightDaysInMonth,
   getNsmanById,
   getNsmanByTgId,
   getPlannerDepts,
@@ -50,6 +52,7 @@ import {
   RuleError,
   assertPlannerForDept,
   buildExportCsv,
+  buildFlightBroadcast,
   canAddPlanner,
   canEditFlightDay,
   canRemovePlanner,
@@ -66,6 +69,7 @@ import {
   validateBatchDatesInput,
   validateDept,
   validateFlightText,
+  validateMonth,
   validateName,
   workYearBounds,
   workYearOf,
@@ -675,6 +679,43 @@ export async function handleRequest(request, env, ctx, opts = {}) {
         detail: `${dept} ${date}`,
       });
       return jsonResponse(request, env, { ok: true, dept, date });
+    }
+
+    // Tell every NSman in the department that a month's flights are posted.
+    if (method === 'POST' && path === '/api/flights/broadcast') {
+      const body = await readJson(request);
+      const dept = validateDept(body.dept);
+      const month = validateMonth(body.month);
+      assertPlannerForDept(plannerDepts, dept, { isAdmin });
+      const flights = await getFlightDaysInMonth(env.DB, dept, month);
+      const { text, count } = buildFlightBroadcast({ dept, month, flights, today });
+      const nsmen = await getActiveNsmenInDept(env.DB, dept);
+      if (!nsmen.length) {
+        throw new RuleError('NO_NSMEN', `No ${dept} NSmen have joined yet, so there's no one to message.`, 400);
+      }
+      const actor = actorFor(dept);
+      await writeLog(env.DB, {
+        at: nowIso,
+        actor,
+        action: 'broadcast_flights',
+        detail: `${dept} ${month} to ${nsmen.length} NSmen`,
+      });
+      notifyInBackground({
+        ctx,
+        db: env.DB,
+        botToken: env.BOT_TOKEN,
+        recipients: nsmen.map((n) => ({ tgId: n.tg_id, label: n.name })),
+        text,
+        openUrl: appUrlFor(env),
+        nowIso,
+        fetchImpl,
+      });
+      return jsonResponse(request, env, {
+        ok: true,
+        recipients: nsmen.length,
+        flights: count,
+        broadcast: { dept, month, at: nowIso, actor },
+      });
     }
 
     // ---- NSman management ----

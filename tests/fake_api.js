@@ -102,6 +102,7 @@
     }
   }
 
+  state.broadcasts = Array.isArray(o.broadcasts) ? o.broadcasts.slice() : [];
   window.FAKE = { calls: [], state };
 
   function me() {
@@ -133,6 +134,8 @@
       nsmen: isPl ? active.filter((n) => eff.includes(n.dept)) : [],
       flightDays: state.flightDays.filter((f) => eff.includes(f.dept) || (m && f.dept === m.dept)),
       cells: isPl ? state.cells.slice() : state.cells.filter((c) => m && c.nsman_id === m.id),
+      // A Worker deployed before the broadcast feature sends no broadcasts field at all.
+      broadcasts: o.oldWorker ? undefined : isPl ? state.broadcasts.filter((b) => eff.includes(b.dept)) : [],
       planners: state.isAdmin
         ? state.planners.slice()
         : isPl
@@ -312,6 +315,18 @@
       if (idx >= 0) state.flightDays[idx] = f;
       else state.flightDays.push(f);
       return { ok: true, flightDay: f };
+    }
+    if (method === 'POST' && path === '/api/flights/broadcast') {
+      const crew = state.nsmen.filter((n) => n.active && n.dept === body.dept);
+      const upcoming = state.flightDays.filter(
+        (f) => f.dept === body.dept && f.date.startsWith(body.month + '-') && f.date >= TODAY,
+      );
+      if (!upcoming.length) return { ok: false, error: `No upcoming ${body.dept} flights to broadcast.` };
+      if (!crew.length) return { ok: false, error: `No ${body.dept} NSmen have joined yet, so there's no one to message.` };
+      const broadcast = { dept: body.dept, month: body.month, at: `${TODAY}T02:00:00.000Z`, actor: state.plannerName || 'ME2 ALPHA' };
+      state.broadcasts = state.broadcasts.filter((b) => !(b.dept === body.dept && b.month === body.month));
+      state.broadcasts.unshift(broadcast);
+      return { ok: true, recipients: crew.length, flights: upcoming.length, broadcast };
     }
     if (method === 'DELETE' && path === '/api/flights') {
       state.flightDays = state.flightDays.filter((f) => !(f.dept === body.dept && f.date === body.date));

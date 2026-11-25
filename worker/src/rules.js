@@ -98,6 +98,42 @@ export function fmtFlightInfo(flight) {
   return [flight.type, flight.time].filter(Boolean).join(' · ');
 }
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+export function validateMonth(month) {
+  if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    throw new RuleError('BAD_MONTH', 'Choose a valid month.', 400);
+  }
+  return month;
+}
+
+export function monthLabel(month) {
+  validateMonth(month);
+  const [y, m] = month.split('-').map(Number);
+  return `${MONTH_NAMES[m - 1]} ${y}`;
+}
+
+// The bot message a planner sends to their department once a month's flights are posted.
+// Lists only flight days from today on, one line each, in date order.
+export function buildFlightBroadcast({ dept, month, flights, today }) {
+  const label = monthLabel(month);
+  const upcoming = (flights || [])
+    .filter((f) => f.dept === dept && f.date.startsWith(month + '-') && f.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (!upcoming.length) {
+    throw new RuleError('NO_FLIGHTS', `No upcoming ${dept} flights in ${label} to broadcast.`, 400);
+  }
+  const lines = upcoming.map((f) => {
+    const info = [f.type, f.time].filter(Boolean).join(', ');
+    return `• ${fmtDate(f.date)}${info ? ' – ' + info : ''}`;
+  });
+  const text = `${dept} flights for ${label} are out:\n${lines.join('\n')}\n\nOpen the app and select the days you can fly.`;
+  return { text, count: upcoming.length };
+}
+
 export function validateDept(dept) {
   if (typeof dept !== 'string' || !DEPARTMENTS.includes(dept)) {
     throw new RuleError('BAD_DEPT', 'Choose a valid department.', 400);

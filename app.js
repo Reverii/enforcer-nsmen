@@ -588,6 +588,8 @@
     S.flightDays = d.flightDays || [];
     S.cells = d.cells || [];
     S.planners = d.planners || [];
+    // Older Workers send no broadcasts field; null hides the Broadcast button until it's deployed.
+    S.broadcasts = Array.isArray(d.broadcasts) ? d.broadcasts : null;
 
     const [ty, tm] = S.today.split('-').map(Number);
     if (!S.nsMonth) S.nsMonth = [ty, tm - 1];
@@ -649,6 +651,17 @@
   // ---- domain actions (optimistic) ----
 
   const act = {
+    async broadcast(dept, monthKey) {
+      try {
+        const res = await api('POST', '/api/flights/broadcast', { dept, month: monthKey });
+        S.broadcasts = (S.broadcasts || []).filter((b) => !(b.dept === dept && b.month === monthKey));
+        if (res.broadcast) S.broadcasts.unshift(res.broadcast);
+        toast(`Sent to ${res.recipients} ${dept} NSmen`);
+      } catch (err) {
+        toast(err.message || 'Something went wrong. Try again.', true);
+      }
+      render();
+    },
     unavail(date) {
       const me = S.me;
       if (!me) return;
@@ -1424,7 +1437,8 @@
         return `<button class="lrow" data-h="${f.date}"><span class="dt num">${nice(f.date).replace(/ \w+$/, '')}</span><span>${esc(f.type || 'Flight')} <span class="note num">${esc(f.time || '')}</span><span class="sub num">${on} on the plan · ${av} more available · ${se} SAF100 to confirm</span></span><span class="pill p-none num">${on} planned</span></button>`;
       }).join('');
       view = `<div class="list" style="margin-top:0"><h4>${esc(dept)} flights in ${MONTHS[m]} <span class="num">${fl.length}</span></h4>${rows || `<p class="note">No flights posted for ${MONTHS[m]} yet.</p>`}</div>
-        <button class="btn sec block" id="addfl" style="margin-top:12px">Post a flight day</button>`;
+        <button class="btn sec block" id="addfl" style="margin-top:12px">Post a flight day</button>
+        ${broadcastBlockHtml(dept, y, m, fl)}`;
     } else {
       const meId = myTgId();
       const rows = crew.map((p) => {
@@ -1506,6 +1520,8 @@
 
     const af = $('addfl');
     if (af) af.onclick = () => flightSheet(null);
+    const bc = $('bcast');
+    if (bc) bc.onclick = () => broadcastSheet(dept, `${y}-${pad2(m + 1)}`, MONTHS[m]);
 
     $('screen').querySelectorAll('[data-edit-ns]').forEach((b) => {
       b.onclick = () => {
@@ -1753,6 +1769,53 @@
           },
         ],
       ],
+    );
+  }
+
+  // ---- Flight broadcast ----
+
+  // "Tue 24 Nov, 10:00" in Singapore time, from a stored UTC timestamp.
+  function fmtSgtStamp(isoStamp) {
+    const t = Date.parse(isoStamp);
+    if (!Number.isFinite(t)) return '';
+    const sg = new Date(t + 8 * 3600 * 1000);
+    const day = sg.toISOString().slice(0, 10);
+    return `${nice(day)}, ${pad2(sg.getUTCHours())}:${pad2(sg.getUTCMinutes())}`;
+  }
+
+  function lastBroadcast(dept, monthKey) {
+    return (S.broadcasts || []).find((b) => b.dept === dept && b.month === monthKey) || null;
+  }
+
+  function broadcastBlockHtml(dept, y, m, fl) {
+    if (!Array.isArray(S.broadcasts)) return '';
+    const monthKey = `${y}-${pad2(m + 1)}`;
+    const upcoming = fl.filter((f) => !isPast(f.date)).length;
+    const last = lastBroadcast(dept, monthKey);
+    const note = last
+      ? `Last sent ${esc(fmtSgtStamp(last.at))} by ${esc(last.actor)}.`
+      : upcoming
+        ? `Messages every ${esc(dept)} NSman the list of ${MONTHS[m]} flight days.`
+        : `Post ${MONTHS[m]}'s flight days first, then broadcast them to ${esc(dept)} NSmen.`;
+    return `<button class="btn block" id="bcast" type="button" style="margin-top:8px" ${upcoming ? '' : 'disabled'}>Broadcast ${MONTHS[m]} flights</button>
+        <p class="note" id="bcastNote" style="margin:6px 0 0">${note}</p>`;
+  }
+
+  function broadcastSheet(dept, monthKey, monthName) {
+    const crew = S.nsmen.filter((p) => p.dept === dept);
+    const upcoming = S.flightDays.filter((f) => f.dept === dept && f.date.startsWith(monthKey + '-') && !isPast(f.date));
+    const last = lastBroadcast(dept, monthKey);
+    const n = crew.length;
+    const k = upcoming.length;
+    const body = n
+      ? `<p class="sub">Sends a bot message to all ${n} ${esc(dept)} NSmen listing ${k} upcoming flight day${k === 1 ? '' : 's'}.</p>`
+      : `<p class="sub">No ${esc(dept)} NSmen have joined yet, so there's no one to message.</p>`;
+    const warn = last
+      ? `<div class="warn">Already sent on ${esc(fmtSgtStamp(last.at))} by ${esc(last.actor)}. Sending again messages everyone again.</div>`
+      : '';
+    openSheet(
+      `<h5>Broadcast ${esc(monthName)} flights</h5>${body}${warn}`,
+      [[`Send to ${n} NSmen`, 'primary', n && k ? () => act.broadcast(dept, monthKey) : null]],
     );
   }
 
