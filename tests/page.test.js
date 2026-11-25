@@ -145,6 +145,27 @@ test('joining screen shows Telegram ID with Copy button, help line, and joins de
   await page.close();
 });
 
+test('My days shows the NSman\'s rank and name with their department', async () => {
+  const page = await open({ plannerDepts: [] });
+  await page.getByRole('heading', { name: 'My days' }).waitFor();
+  assert.equal(await page.locator('.apptitle .who b').innerText(), 'ME2 ALPHA');
+  assert.equal(await page.locator('.apptitle .who .chip').innerText(), 'Loadmaster');
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test('My days keeps a long name on one line without widening a 360px screen', async () => {
+  const page = await open({ plannerDepts: [], width: 360 });
+  await page.getByRole('heading', { name: 'My days' }).waitFor();
+  await page.evaluate(() => {
+    document.querySelector('.apptitle .who b').textContent = 'MAJ(NS) MUHAMMAD HAFIZUDDIN BIN ABDUL RAHMAN';
+  });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 360));
+  const h = await page.locator('.apptitle').evaluate((el) => el.getBoundingClientRect().height);
+  assert.ok(h <= 30, `title row grew to ${h}px`);
+  await page.close();
+});
+
 test('non-NSman planner never sees the joining screen and lands directly on Planner tab', async () => {
   const page = await open({
     joined: false,

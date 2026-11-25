@@ -1194,7 +1194,7 @@
     }).join('');
 
     $('screen').innerHTML = `<div class="pad">
-      <div class="apptitle"><h3>My days</h3><span class="chip">${esc(p.dept)}</span></div>
+      <div class="apptitle"><h3>My days</h3><span class="who"><b>${esc(p.name)}</b><span class="chip">${esc(p.dept)}</span></span></div>
       <div class="cap">
         <div class="row"><span>SAF100 this work year</span><span class="note">${wyLabel(wy)}</span></div>
         <div class="big num">${u} <small>of ${S.cap} days</small></div>
