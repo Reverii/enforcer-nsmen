@@ -8,6 +8,9 @@ SAF100s, and export a work-year CSV. Each NSman marks the days they can fly, con
 receive their SAF100, and sees how many of their **40 SAF100 days per work year (1 April – 31 March)**
 they have used.
 
+**New to the app?** See [`QUICK-GUIDE.md`](QUICK-GUIDE.md) for a short guide for NSmen, planners and the
+Highest Admin.
+
 ## How it works
 
 - **First open (NSmen):** enter your rank and name and pick your one department. You join straight away
