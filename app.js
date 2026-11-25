@@ -40,6 +40,16 @@
     cancelled: 'Cxl',
     withdrawn: 'W/d',
   };
+  // Shown small at the bottom of every screen. Keep in step with package.json.
+  const APP_VERSION = '1.1.0';
+  const SIGNATURE = 'Martell';
+
+  function addSignature() {
+    const host = document.querySelector('#screen .pad') || $('screen');
+    if (!host || host.querySelector('.sig')) return;
+    host.insertAdjacentHTML('beforeend', `<p class="sig">v${esc(APP_VERSION)} · ${esc(SIGNATURE)}</p>`);
+  }
+
   const PLANE_SVG =
     '<svg class="fl" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 1c.6 0 1 .5 1 1.2v3.6l5.5 3v1.5L9 8.6v3.3l1.8 1.3V14.5L8 13.7l-2.8.8v-1.3L7 11.9V8.6L1.5 10.3V8.8l5.5-3V2.2C7 1.5 7.4 1 8 1z"/></svg>';
 
@@ -912,6 +922,7 @@
       tabs.hidden = true;
       tabs.innerHTML = '';
       renderJoin();
+      addSignature();
       return;
     }
 
@@ -926,6 +937,7 @@
       S.tab = 'planner';
       renderPlanner();
     }
+    addSignature();
 
     const tabList = [];
     if (isPlanner) tabList.push({ id: 'tabPlanner', key: 'planner', label: 'Planner' });
