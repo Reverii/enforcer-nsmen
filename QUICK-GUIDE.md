@@ -7,7 +7,8 @@ message you when you're planned or your SAF100 is sent.
 
 ## How it works
 
-1. **The planner posts flight days.** They show a plane icon on your calendar.
+1. **The planner posts flight days**, then broadcasts the month. You get a bot message listing the
+   dates, and they show a plane icon on your calendar.
 2. **You pick the days you can fly.** Tap a flight day to pick it, or tap any other day you're free.
 3. **The planner plans people** from those who picked the day.
 4. **The planner sends your SAF100.** You confirm when you've received it.
@@ -62,6 +63,10 @@ The **Planner** tab has three views:
     the day before, with an optional reason).
 - **Flights**: your flight days for the month. Tap **Post a flight day** to add one; type and time are
   optional.
+  - Once the month's flights are in, tap **Broadcast `<Month>` flights**. The bot messages every NSman
+    in your department with the list of upcoming flight days and a button to open the app.
+  - You can broadcast again after changes. The app warns you first and shows when it was last sent
+    and by whom.
 - **NSmen**: your department's roster.
   - Tap a name to edit their rank, name or department, or remove them.
   - **Add a `<Dept>` planner**: add another planner by Telegram ID and rank/name.

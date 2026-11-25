@@ -189,6 +189,51 @@ test('version and signature line sits at the bottom of every screen', async () =
   await page.close();
 });
 
+test('planner broadcasts a month of flights from the Flights view, with a warning before a repeat send', async () => {
+  const page = await open();
+  await page.locator('#tabPlanner').click();
+  await page.getByRole('heading', { name: 'Planner' }).waitFor();
+  await page.locator('[data-v="flights"]').click();
+
+  // November has no Loadmaster flights: button is there but disabled, with a hint
+  const btn = page.locator('#bcast');
+  assert.equal(await btn.innerText(), 'Broadcast November flights');
+  assert.equal(await btn.isDisabled(), true);
+  await page.getByText("Post November's flight days first, then broadcast them to Loadmaster NSmen.").waitFor();
+
+  // December has 2 upcoming flights
+  await page.getByRole('button', { name: 'Next month' }).click();
+  await page.getByText('December 2026').waitFor();
+  assert.equal(await btn.innerText(), 'Broadcast December flights');
+  assert.equal(await btn.isDisabled(), false);
+  await page.getByText('Messages every Loadmaster NSman the list of December flight days.').waitFor();
+
+  await btn.click();
+  await page.locator('.sheet').waitFor({ state: 'visible' });
+  await page.locator('.sheet h5', { hasText: 'Broadcast December flights' }).waitFor();
+  await page.locator('.sheet', { hasText: 'Sends a bot message to all 3 Loadmaster NSmen listing 2 upcoming flight days.' }).waitFor();
+  assert.equal(await page.locator('.sheet .warn').count(), 0, 'no repeat warning on first send');
+  await page.locator('.sheet button', { hasText: 'Send to 3 NSmen' }).click();
+  await page.getByText('Sent to 3 Loadmaster NSmen').waitFor();
+
+  const calls = await page.evaluate(() => window.FAKE.calls.filter((c) => c.path === '/api/flights/broadcast'));
+  assert.deepEqual(calls.map((c) => c.body), [{ dept: 'Loadmaster', month: '2026-12' }]);
+  await page.getByText('Last sent Tue 24 Nov, 10:00 by ME2 ALPHA.').waitFor();
+
+  // Sending again warns first and still works
+  await btn.click();
+  await page.locator('.sheet .warn', { hasText: 'Already sent on Tue 24 Nov, 10:00 by ME2 ALPHA. Sending again messages everyone again.' }).waitFor();
+  await page.locator('.sheet button', { hasText: 'Send to 3 NSmen' }).click();
+  await page.getByText('Sent to 3 Loadmaster NSmen').waitFor();
+  assert.equal(await page.evaluate(() => window.FAKE.calls.filter((c) => c.path === '/api/flights/broadcast').length), 2);
+
+  // Pilot (other dept) keeps its own state
+  await page.locator('#dsel').selectOption('Pilot');
+  await page.getByText('Messages every Pilot NSman the list of December flight days.').waitFor();
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test('non-NSman planner never sees the joining screen and lands directly on Planner tab', async () => {
   const page = await open({
     joined: false,

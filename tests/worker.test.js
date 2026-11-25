@@ -672,3 +672,83 @@ test('batch availability: marks only valid, skips past/out-of-window/sent/receiv
   assert.equal(batchLogs[0].action, 'mark_available_batch');
   assert.equal(batchLogs[1].action, 'unmark_planned_batch');
 });
+
+test('flight broadcast: messages every NSman in the dept with upcoming flights, logs it, shows last send in init, and guards access', async () => {
+  await resetDb();
+  await apiReq(ADMIN_SEED, 'GET', '/api/init');
+  await apiReq(NSMAN_LM, 'POST', '/api/join', { name: 'ME2 ALPHA', dept: 'Loadmaster' });
+  await apiReq(NSMAN_LM2, 'POST', '/api/join', { name: 'ME3 BRAVO', dept: 'Loadmaster' });
+  await apiReq(NSMAN_PILOT, 'POST', '/api/join', { name: 'CPT DELTA', dept: 'Pilot' });
+  await apiReq(ADMIN_SEED, 'POST', '/api/planners', {
+    tgId: String(PLANNER_NON_NSMAN.id),
+    name: 'ME4 ONG S.H.',
+    dept: 'Loadmaster',
+  });
+
+  const month = TOMORROW.slice(0, 7);
+  assert.equal(
+    (await apiReq(PLANNER_NON_NSMAN, 'POST', '/api/flights', { dept: 'Loadmaster', date: TOMORROW, type: 'C-130', time: '0800-1500' })).status,
+    200,
+  );
+  // A flight that has already passed in the same month is left out of the message
+  await db
+    .prepare("INSERT INTO flight_days (dept, date, type, time) VALUES ('Loadmaster', ?, 'Old sortie', '')")
+    .bind(`${month}-01` < TODAY ? `${month}-01` : '2000-01-01')
+    .run();
+
+  const sentDms = [];
+  const captureFetch = async (_url, init) => {
+    sentDms.push(JSON.parse(init.body));
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  const res = await apiReq(PLANNER_NON_NSMAN, 'POST', '/api/flights/broadcast', { dept: 'Loadmaster', month }, { fetchImpl: captureFetch });
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.equal(data.recipients, 2);
+  assert.equal(data.flights, 1);
+  assert.equal(data.broadcast.dept, 'Loadmaster');
+  assert.equal(data.broadcast.month, month);
+  assert.equal(data.broadcast.actor, 'ME4 ONG S.H.');
+
+  // Background sends finish on their own; wait briefly for them
+  for (let i = 0; i < 50 && sentDms.length < 2; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(sentDms.map((m) => m.chat_id).sort(), [String(NSMAN_LM.id), String(NSMAN_LM2.id)]);
+  for (const m of sentDms) {
+    assert.match(m.text, /^Loadmaster flights for \w+ \d{4} are out:\n• \w{3} \d{1,2} \w{3} – C-130, 0800-1500\n\nOpen the app and select the days you can fly\.$/);
+    assert.ok(!m.text.includes('Old sortie'));
+    assert.equal(m.reply_markup.inline_keyboard[0][0].web_app.url, APP_URL);
+  }
+
+  const logs = await db.prepare("SELECT actor, detail FROM log WHERE action = 'broadcast_flights'").all();
+  assert.equal(logs.results.length, 1);
+  assert.equal(logs.results[0].actor, 'ME4 ONG S.H.');
+  assert.equal(logs.results[0].detail, `Loadmaster ${month} to 2 NSmen`);
+
+  // Planner's init shows the last broadcast for their dept; an NSman's does not
+  const plInit = await (await apiReq(PLANNER_NON_NSMAN, 'GET', '/api/init')).json();
+  assert.equal(plInit.broadcasts.length, 1);
+  assert.deepEqual(
+    { dept: plInit.broadcasts[0].dept, month: plInit.broadcasts[0].month, actor: plInit.broadcasts[0].actor },
+    { dept: 'Loadmaster', month, actor: 'ME4 ONG S.H.' },
+  );
+  const nsInit = await (await apiReq(NSMAN_LM, 'GET', '/api/init')).json();
+  assert.deepEqual(nsInit.broadcasts, []);
+
+  // Sending again is allowed and the newest send wins in init
+  assert.equal((await apiReq(ADMIN_SEED, 'POST', '/api/flights/broadcast', { dept: 'Loadmaster', month })).status, 200);
+  const plInit2 = await (await apiReq(PLANNER_NON_NSMAN, 'GET', '/api/init')).json();
+  assert.equal(plInit2.broadcasts.length, 1);
+  assert.equal(plInit2.broadcasts[0].actor, 'LTC TAY');
+
+  // Guards: other dept, NSman, bad month, no upcoming flights, no NSmen
+  assert.equal((await apiReq(PLANNER_NON_NSMAN, 'POST', '/api/flights/broadcast', { dept: 'Pilot', month })).status, 403);
+  assert.equal((await apiReq(NSMAN_LM, 'POST', '/api/flights/broadcast', { dept: 'Loadmaster', month })).status, 403);
+  assert.equal((await apiReq(PLANNER_NON_NSMAN, 'POST', '/api/flights/broadcast', { dept: 'Loadmaster', month: '2026-13' })).status, 400);
+  const noFl = await apiReq(ADMIN_SEED, 'POST', '/api/flights/broadcast', { dept: 'Pilot', month });
+  assert.equal(noFl.status, 400);
+  assert.match((await noFl.json()).error, /No upcoming Pilot flights/);
+  await apiReq(ADMIN_SEED, 'POST', '/api/flights', { dept: 'Tacco', date: TOMORROW });
+  const noNs = await apiReq(ADMIN_SEED, 'POST', '/api/flights/broadcast', { dept: 'Tacco', month });
+  assert.equal(noNs.status, 400);
+  assert.match((await noNs.json()).error, /No Tacco NSmen/);
+});

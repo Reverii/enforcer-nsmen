@@ -6,6 +6,7 @@ import {
   MAX_BATCH_DATES,
   STATES,
   buildExportCsv,
+  buildFlightBroadcast,
   canAddPlanner,
   canEditFlightDay,
   canRemovePlanner,
@@ -16,10 +17,12 @@ import {
   effectivePlannerDepts,
   isHighestAdmin,
   maxMarkingDate,
+  monthLabel,
   passHighestAdmin,
   todaySGT,
   validateAvailabilityBatch,
   validateBatchDatesInput,
+  validateMonth,
   validateTgId,
   workYearBounds,
   workYearOf,
@@ -666,4 +669,46 @@ test('batch availability validation: valid vs skipped reasons, dedupe, and 120-d
     { date: '2026-12-07', reason: 'SAF100 already sent' },
     { date: YESTERDAY, reason: 'past date' },
   ]);
+});
+
+test('flight broadcast: month validation, label, upcoming flights only, one line per flight', () => {
+  assert.equal(validateMonth('2026-12'), '2026-12');
+  for (const bad of ['2026-13', '2026-1', '26-12', '', null, 202612, '2026-12-01']) {
+    assert.equal(errCode(() => validateMonth(bad)), 'BAD_MONTH', String(bad));
+  }
+  assert.equal(monthLabel('2026-12'), 'December 2026');
+  assert.equal(monthLabel('2027-01'), 'January 2027');
+
+  const flights = [
+    { dept: 'Loadmaster', date: '2026-12-15', type: 'C-130 night', time: '1800-0100' },
+    { dept: 'Loadmaster', date: '2026-12-02', type: 'C-130', time: '0800-1500' },
+    { dept: 'Loadmaster', date: '2026-12-17', type: '', time: '' },
+    { dept: 'Loadmaster', date: '2026-12-20', type: 'C-130', time: '' },
+    { dept: 'Loadmaster', date: '2026-11-20', type: 'C-130', time: '0800-1500' }, // other month
+    { dept: 'Pilot', date: '2026-12-10', type: 'KC-130', time: '1300-2000' }, // other dept
+  ];
+  const b = buildFlightBroadcast({ dept: 'Loadmaster', month: '2026-12', flights, today: '2026-11-24' });
+  assert.equal(b.count, 4);
+  assert.equal(
+    b.text,
+    'Loadmaster flights for December 2026 are out:\n' +
+      '• Wed 2 Dec – C-130, 0800-1500\n' +
+      '• Tue 15 Dec – C-130 night, 1800-0100\n' +
+      '• Thu 17 Dec\n' +
+      '• Sun 20 Dec – C-130\n' +
+      '\nOpen the app and select the days you can fly.',
+  );
+
+  // Past flights in the month are left out; today's flight still counts
+  const mid = buildFlightBroadcast({ dept: 'Loadmaster', month: '2026-12', flights, today: '2026-12-15' });
+  assert.equal(mid.count, 3);
+  assert.ok(!mid.text.includes('Wed 2 Dec'));
+  assert.ok(mid.text.includes('Tue 15 Dec'));
+
+  // No upcoming flights in the month: refused with a clear message
+  assert.equal(
+    errCode(() => buildFlightBroadcast({ dept: 'Loadmaster', month: '2026-12', flights, today: '2026-12-21' })),
+    'NO_FLIGHTS',
+  );
+  assert.equal(errCode(() => buildFlightBroadcast({ dept: 'Tacco', month: '2026-12', flights, today: '2026-11-24' })), 'NO_FLIGHTS');
 });
