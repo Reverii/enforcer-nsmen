@@ -588,7 +588,8 @@
     S.flightDays = d.flightDays || [];
     S.cells = d.cells || [];
     S.planners = d.planners || [];
-    S.broadcasts = d.broadcasts || [];
+    // Older Workers send no broadcasts field; null hides the Broadcast button until it's deployed.
+    S.broadcasts = Array.isArray(d.broadcasts) ? d.broadcasts : null;
 
     const [ty, tm] = S.today.split('-').map(Number);
     if (!S.nsMonth) S.nsMonth = [ty, tm - 1];
@@ -1787,6 +1788,7 @@
   }
 
   function broadcastBlockHtml(dept, y, m, fl) {
+    if (!Array.isArray(S.broadcasts)) return '';
     const monthKey = `${y}-${pad2(m + 1)}`;
     const upcoming = fl.filter((f) => !isPast(f.date)).length;
     const last = lastBroadcast(dept, monthKey);

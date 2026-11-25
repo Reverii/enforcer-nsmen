@@ -46,6 +46,7 @@ async function open({
   colorScheme = 'light',
   extraFlights = [],
   extraCells = [],
+  oldWorker = false,
 } = {}) {
   const page = await browser.newPage({ viewport: { width, height: 844 } });
   await page.emulateMedia({ colorScheme });
@@ -68,6 +69,7 @@ async function open({
       colorScheme,
       extraFlights,
       extraCells,
+      oldWorker,
     }) => {
       window.APP_TODAY = '2026-11-24';
       window.FAKE_OPTS = {
@@ -81,6 +83,7 @@ async function open({
         bravoAtCap,
         extraFlights,
         extraCells,
+        oldWorker,
       };
       window.DOWNLOAD_CALLS = [];
       const webApp = {
@@ -110,6 +113,7 @@ async function open({
       colorScheme,
       extraFlights,
       extraCells,
+      oldWorker,
     },
   );
   await page.addInitScript({ content: fs.readFileSync(path.join(import.meta.dirname, 'fake_api.js'), 'utf8') });
@@ -230,6 +234,20 @@ test('planner broadcasts a month of flights from the Flights view, with a warnin
   // Pilot (other dept) keeps its own state
   await page.locator('#dsel').selectOption('Pilot');
   await page.getByText('Messages every Pilot NSman the list of December flight days.').waitFor();
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test('Broadcast button stays hidden while the Worker does not support it yet', async () => {
+  const page = await open({ oldWorker: true });
+  await page.locator('#tabPlanner').click();
+  await page.getByRole('heading', { name: 'Planner' }).waitFor();
+  await page.locator('[data-v="flights"]').click();
+  await page.getByRole('button', { name: 'Next month' }).click();
+  await page.getByText('December 2026').waitFor();
+  await page.locator('#addfl').waitFor();
+  assert.equal(await page.locator('#bcast').count(), 0);
+  assert.equal(await page.locator('#bcastNote').count(), 0);
   assert.deepEqual(page.errors, []);
   await page.close();
 });

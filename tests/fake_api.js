@@ -134,7 +134,8 @@
       nsmen: isPl ? active.filter((n) => eff.includes(n.dept)) : [],
       flightDays: state.flightDays.filter((f) => eff.includes(f.dept) || (m && f.dept === m.dept)),
       cells: isPl ? state.cells.slice() : state.cells.filter((c) => m && c.nsman_id === m.id),
-      broadcasts: isPl ? state.broadcasts.filter((b) => eff.includes(b.dept)) : [],
+      // A Worker deployed before the broadcast feature sends no broadcasts field at all.
+      broadcasts: o.oldWorker ? undefined : isPl ? state.broadcasts.filter((b) => eff.includes(b.dept)) : [],
       planners: state.isAdmin
         ? state.planners.slice()
         : isPl
