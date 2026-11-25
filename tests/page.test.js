@@ -399,6 +399,11 @@ test('Tap-to-mark: 4 taps batch after debounce, toggle undo, tap-untap sends not
   // A tapped day with no flight posted says Free; a tapped flight day says Select
   assert.equal(await page.locator('#nscal [data-d="2026-12-16"] .w').innerText(), 'Free');
   assert.equal(await page.locator('#nscal [data-d="2026-12-15"] .w').innerText(), 'Select');
+  // Select is a solid fill like a picked date; Free keeps the pale tint
+  const selBg = (d) => page.locator(`#nscal [data-d="${d}"]`).evaluate((el) => getComputedStyle(el).backgroundColor);
+  assert.equal(await selBg('2026-12-15'), 'rgb(15, 122, 87)');
+  assert.equal(await selBg('2026-12-16'), 'rgb(226, 243, 236)');
+  assert.equal(await page.locator('.list .lrow[data-d="2026-12-15"] .pill').evaluate((el) => getComputedStyle(el).backgroundColor), 'rgb(15, 122, 87)');
 
   // Before debounce fires, no batch call sent yet
   const batchBefore = await page.evaluate(() =>
@@ -646,7 +651,7 @@ test('Day markers: every state renders its word in calendar, flight rows, sheets
 
   const expectedCal = [
     ['2026-12-03', 's-none', '', null],
-    ['2026-12-15', 's-available', 'Select', 'rgb(226, 243, 236)'],
+    ['2026-12-15', 's-available', 'Select', 'rgb(15, 122, 87)'],
     ['2026-12-11', 's-planned', 'Planned', 'rgb(253, 240, 211)'],
     ['2026-12-09', 's-sent', 'Sent', 'rgb(29, 95, 191)'],
     ['2026-12-12', 's-received', 'Got it', 'rgb(29, 95, 191)'],

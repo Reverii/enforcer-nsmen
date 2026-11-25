@@ -1132,6 +1132,7 @@
       const cls = [
         'day',
         sCls(c.state),
+        f && c.state === 'available' ? 'select' : '',
         f ? 'flight' : '',
         past ? 'past' : '',
         isToday(ds) ? 'today' : '',
@@ -1195,7 +1196,7 @@
         : markable
           ? ' aria-pressed="false"'
           : '';
-      return `<button class="${rowCls}" type="button" data-d="${f.date}" aria-label="${esc(lab)}" title="${esc(lab)}"${ariaAttrs}><span class="dt num">${nice(f.date).replace(/ \w+$/, '')}</span><span>${esc(f.type || 'Flight')}<span class="sub num">${esc(f.time || 'Time not set')}</span></span><span class="pill ${pillCls(c.state)}">${mineWord(c.state, true, STATE_WORD)}</span></button>`;
+      return `<button class="${rowCls}" type="button" data-d="${f.date}" aria-label="${esc(lab)}" title="${esc(lab)}"${ariaAttrs}><span class="dt num">${nice(f.date).replace(/ \w+$/, '')}</span><span>${esc(f.type || 'Flight')}<span class="sub num">${esc(f.time || 'Time not set')}</span></span><span class="pill ${pillCls(c.state)}${c.state === 'available' ? ' select' : ''}">${mineWord(c.state, true, STATE_WORD)}</span></button>`;
     }).join('');
 
     $('screen').innerHTML = `<div class="pad">

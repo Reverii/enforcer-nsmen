@@ -17,6 +17,8 @@
   --on-hue: #ffffff;
   --free-bg: #e2f3ec;
   --free-ink: #0f6b4f;
+  --select-bg: #0f7a57;
+  --select-ink: #ffffff;
   --plan-bg: #fdf0d3;
   --plan-ink: #7a4f00;
   --red-bg: #fde8e6;
@@ -56,6 +58,8 @@
     --on-hue: #06142b;
     --free-bg: #12301f;
     --free-ink: #7ad6a6;
+    --select-bg: #3fb67f;
+    --select-ink: #04170e;
     --plan-bg: #33270d;
     --plan-ink: #f2c46b;
     --red-bg: #3a1716;
@@ -91,6 +95,8 @@
   --on-hue: #06142b;
   --free-bg: #12301f;
   --free-ink: #7ad6a6;
+  --select-bg: #3fb67f;
+  --select-ink: #04170e;
   --plan-bg: #33270d;
   --plan-ink: #f2c46b;
   --red-bg: #3a1716;
@@ -345,6 +351,8 @@ button { -webkit-appearance: none; appearance: none; }
 .day.past { color: var(--faint); cursor: default; }
 .day.today .d { background: var(--text); color: var(--surface); font-weight: 700; }
 .s-available { background: var(--free-bg); color: var(--free-ink); }
+/* A flight day the NSman picked: solid, like a selected date in a date picker */
+.s-available.select, .p-available.select { background: var(--select-bg); color: var(--select-ink); }
 .s-planned { background: var(--plan-bg); color: var(--plan-ink); }
 .s-sent, .s-received { background: var(--hue); color: var(--on-hue); }
 .s-cancelled, .s-withdrawn { background: var(--red-bg); color: var(--red-ink); }
