@@ -166,6 +166,29 @@ test('My days keeps a long name on one line without widening a 360px screen', as
   await page.close();
 });
 
+test('version and signature line sits at the bottom of every screen', async () => {
+  const sig = 'v1.1.0 · Martell';
+  const join = await open({ joined: false, plannerDepts: [] });
+  await join.getByText('Join your department').waitFor();
+  assert.equal(await join.locator('#screen .sig').innerText(), sig);
+  await join.close();
+
+  const page = await open({ isAdmin: true, adminName: 'BRANDON' });
+  for (const [tab, heading] of [['#tabMine', 'My days'], ['#tabPlanner', 'Planner'], ['#tabAdmin', 'Admin']]) {
+    await page.locator(tab).click();
+    await page.getByRole('heading', { name: heading, exact: true }).waitFor();
+    assert.equal(await page.locator('#screen .sig').count(), 1, `${heading} has one signature line`);
+    assert.equal(await page.locator('#screen .sig').innerText(), sig);
+    const last = await page.evaluate(() => {
+      const pad = document.querySelector('#screen .pad') || document.querySelector('#screen');
+      return pad.lastElementChild.classList.contains('sig');
+    });
+    assert.ok(last, `${heading} signature is the last thing on the screen`);
+  }
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test('non-NSman planner never sees the joining screen and lands directly on Planner tab', async () => {
   const page = await open({
     joined: false,

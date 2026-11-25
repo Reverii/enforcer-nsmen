@@ -40,6 +40,8 @@ Telegram Mini App for planning NSmen flying duties and tracking SAF100s across f
 
 1. Change the code, then run `npm test` (rules, Worker with local D1, page with Playwright).
 2. Bump the `?v=` numbers in `index.html` and `demo/index.html` so phones load the new files.
+   For a release, also bump `APP_VERSION` in `app.js` and `version` in `package.json` (shown at the
+   bottom of every screen as `v1.1.0 · Martell`).
 3. `git push` (GitHub Pages updates the page in about a minute).
 4. If anything in `worker/` changed: `npm run deploy`. If a new migration was added:
    `npx wrangler d1 migrations apply enforcer-nsmen --remote --config worker/wrangler.toml`.
